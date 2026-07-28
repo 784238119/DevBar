@@ -664,10 +664,11 @@ public enum StopResult: Equatable, Sendable {
     case exitedAfterTerminate
     case killed
     case alreadyExited
+    case failed(ProcessGroupTerminatorError)
 }
 ```
 
-Signal with `kill(-pgid, signal)`, poll group existence without blocking the main actor, and emit the matching `stopPhase` event before each signal.
+Signal with `kill(-pgid, signal)`, poll group existence without blocking the main actor, and emit the matching `stopPhase` event only after that signal is sent. Preserve signal-delivery failures as `.failed(...)` instead of reporting a false successful stop.
 
 - [ ] **Step 6: Implement Runner EOF cleanup**
 
