@@ -17,6 +17,9 @@ enum DevBarLauncher {
 private struct ProductionDevBarApp: App {
     @NSApplicationDelegateAdaptor(DevBarApplicationDelegate.self) private var applicationDelegate
     private let dependencies: AppDependencies
+    private var mainWindowCoordinator: MainWindowCoordinator {
+        applicationDelegate.mainWindowCoordinator
+    }
 
     init() {
         let dependencies = AppDependencies.live()
@@ -25,16 +28,26 @@ private struct ProductionDevBarApp: App {
     }
 
     var body: some Scene {
-        MenuBarExtra {
-            ProductionMenuContent(dependencies: dependencies)
-        } label: {
-            ProductionStatusItem(appState: dependencies.appState)
-        }
-        .menuBarExtraStyle(.window)
-
-        Settings {
+        Window("DevBar", id: "main") {
             SettingsSceneContent(dependencies: dependencies)
         }
+        .defaultSize(width: 980, height: 680)
+        .commands {
+            MainWindowCommands(coordinator: mainWindowCoordinator)
+        }
+
+        MenuBarExtra {
+            ProductionMenuContent(
+                dependencies: dependencies,
+                mainWindowCoordinator: mainWindowCoordinator
+            )
+        } label: {
+            ProductionStatusItem(
+                appState: dependencies.appState,
+                mainWindowCoordinator: mainWindowCoordinator
+            )
+        }
+        .menuBarExtraStyle(.window)
 
         Window("服务日志", id: "logs") {
             LogSceneContent(dependencies: dependencies)
@@ -46,15 +59,14 @@ private struct ProductionDevBarApp: App {
 @MainActor
 private struct ProductionMenuContent: View {
     let dependencies: AppDependencies
-    @Environment(\.openSettings) private var openSettings
+    let mainWindowCoordinator: MainWindowCoordinator
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         MenuBarPanel(
             appState: dependencies.appState,
             openSettings: {
-                NSApp.activate(ignoringOtherApps: true)
-                openSettings()
+                mainWindowCoordinator.openMainWindow()
             },
             openLogs: {
                 NSApp.activate(ignoringOtherApps: true)
@@ -68,21 +80,16 @@ private struct ProductionMenuContent: View {
 @MainActor
 private struct ProductionStatusItem: View {
     @Bindable var appState: AppState
-    @Environment(\.openSettings) private var openSettings
-    @State private var didHandleFirstLaunch = false
+    let mainWindowCoordinator: MainWindowCoordinator
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         Image(systemName: statusSymbol)
             .accessibilityLabel("DevBar")
             .task {
-                while !appState.isConfigurationReady {
-                    guard !Task.isCancelled else { return }
-                    try? await Task.sleep(for: .milliseconds(30))
+                mainWindowCoordinator.register {
+                    openWindow(id: "main")
                 }
-                guard appState.isFirstLaunch, !didHandleFirstLaunch else { return }
-                didHandleFirstLaunch = true
-                NSApp.activate(ignoringOtherApps: true)
-                openSettings()
             }
     }
 
@@ -92,6 +99,20 @@ private struct ProductionStatusItem: View {
         case .working: "terminal.fill"
         case .ready: "checkmark.circle.fill"
         case .error: "exclamationmark.triangle.fill"
+        }
+    }
+}
+
+@MainActor
+private struct MainWindowCommands: Commands {
+    let coordinator: MainWindowCoordinator
+
+    var body: some Commands {
+        CommandGroup(replacing: .appSettings) {
+            Button("设置…") {
+                coordinator.openMainWindow()
+            }
+            .keyboardShortcut(",", modifiers: .command)
         }
     }
 }

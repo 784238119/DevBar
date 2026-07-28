@@ -3,12 +3,36 @@ import DevBarCore
 
 @MainActor
 final class DevBarApplicationDelegate: NSObject, NSApplicationDelegate {
+    let mainWindowCoordinator: MainWindowCoordinator
     private weak var appState: AppState?
     private var terminationTask: Task<Void, Never>?
     private var hasApprovedTermination = false
 
+    override init() {
+        mainWindowCoordinator = MainWindowCoordinator()
+        super.init()
+    }
+
+    init(mainWindowCoordinator: MainWindowCoordinator) {
+        self.mainWindowCoordinator = mainWindowCoordinator
+        super.init()
+    }
+
     func configure(appState: AppState) {
         self.appState = appState
+    }
+
+    func applicationShouldHandleReopen(
+        _ sender: NSApplication,
+        hasVisibleWindows flag: Bool
+    ) -> Bool {
+        mainWindowCoordinator.openMainWindow()
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(
+        _ sender: NSApplication
+    ) -> Bool {
+        false
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

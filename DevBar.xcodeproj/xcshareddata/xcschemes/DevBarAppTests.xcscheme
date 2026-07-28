@@ -15,23 +15,9 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "89BDEA08DC48E4BBABDB4248"
-               BuildableName = "DevBar.app"
-               BlueprintName = "DevBar"
-               ReferencedContainer = "container:DevBar.xcodeproj">
-            </BuildableReference>
-         </BuildActionEntry>
-         <BuildActionEntry
-            buildForTesting = "YES"
-            buildForRunning = "YES"
-            buildForProfiling = "YES"
-            buildForArchiving = "YES"
-            buildForAnalyzing = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "F3F2F606059EF4FBD52496F7"
-               BuildableName = "DevBarRunner"
-               BlueprintName = "DevBarRunner"
+               BlueprintIdentifier = "D814284504610DD6E5C24CBC"
+               BuildableName = "DevBarAppTests.xctest"
+               BlueprintName = "DevBarAppTests"
                ReferencedContainer = "container:DevBar.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -46,46 +32,13 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "89BDEA08DC48E4BBABDB4248"
-            BuildableName = "DevBar.app"
-            BlueprintName = "DevBar"
+            BlueprintIdentifier = "D814284504610DD6E5C24CBC"
+            BuildableName = "DevBarAppTests.xctest"
+            BlueprintName = "DevBarAppTests"
             ReferencedContainer = "container:DevBar.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <Testables>
-         <TestableReference
-            skipped = "NO"
-            parallelizable = "NO">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "439678B008ECF2134E2BFDC9"
-               BuildableName = "DevBarCoreTests.xctest"
-               BlueprintName = "DevBarCoreTests"
-               ReferencedContainer = "container:DevBar.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
-         <TestableReference
-            skipped = "NO"
-            parallelizable = "NO">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "197EB873E0A91903027528A3"
-               BuildableName = "DevBarRunnerKitTests.xctest"
-               BlueprintName = "DevBarRunnerKitTests"
-               ReferencedContainer = "container:DevBar.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
-         <TestableReference
-            skipped = "NO"
-            parallelizable = "NO">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "7B5F312F2AC3AB7C1FE2F301"
-               BuildableName = "DevBarUITests.xctest"
-               BlueprintName = "DevBarUITests"
-               ReferencedContainer = "container:DevBar.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
          <TestableReference
             skipped = "NO"
             parallelizable = "NO">
@@ -111,16 +64,15 @@
       debugDocumentVersioning = "YES"
       debugServiceExtension = "internal"
       allowLocationSimulation = "YES">
-      <BuildableProductRunnable
-         runnableDebuggingMode = "0">
+      <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "89BDEA08DC48E4BBABDB4248"
-            BuildableName = "DevBar.app"
-            BlueprintName = "DevBar"
+            BlueprintIdentifier = "D814284504610DD6E5C24CBC"
+            BuildableName = "DevBarAppTests.xctest"
+            BlueprintName = "DevBarAppTests"
             ReferencedContainer = "container:DevBar.xcodeproj">
          </BuildableReference>
-      </BuildableProductRunnable>
+      </MacroExpansion>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"
@@ -128,16 +80,15 @@
       savedToolIdentifier = ""
       useCustomWorkingDirectory = "NO"
       debugDocumentVersioning = "YES">
-      <BuildableProductRunnable
-         runnableDebuggingMode = "0">
+      <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "89BDEA08DC48E4BBABDB4248"
-            BuildableName = "DevBar.app"
-            BlueprintName = "DevBar"
+            BlueprintIdentifier = "D814284504610DD6E5C24CBC"
+            BuildableName = "DevBarAppTests.xctest"
+            BlueprintName = "DevBarAppTests"
             ReferencedContainer = "container:DevBar.xcodeproj">
          </BuildableReference>
-      </BuildableProductRunnable>
+      </MacroExpansion>
    </ProfileAction>
    <AnalyzeAction
       buildConfiguration = "Debug">

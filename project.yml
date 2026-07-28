@@ -87,6 +87,15 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
     dependencies:
       - target: DevBar
+  DevBarAppTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources: [Tests/DevBarAppTests]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: DevBar
 schemes:
   DevBar:
     build:
@@ -98,6 +107,7 @@ schemes:
         - DevBarCoreTests
         - DevBarRunnerKitTests
         - DevBarUITests
+        - DevBarAppTests
   DevBarCoreTests:
     build:
       targets:
@@ -119,3 +129,10 @@ schemes:
     test:
       targets:
         - DevBarUITests
+  DevBarAppTests:
+    build:
+      targets:
+        DevBarAppTests: all
+    test:
+      targets:
+        - DevBarAppTests
