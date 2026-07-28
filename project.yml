@@ -1,0 +1,118 @@
+name: DevBar
+options:
+  bundleIdPrefix: com.calo
+  minimumXcodeGenVersion: "2.46.0"
+  deploymentTarget:
+    macOS: "15.0"
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "15.0"
+targets:
+  DevBarCore:
+    type: library.static
+    platform: macOS
+    sources: [Sources/DevBarCore]
+  DevBarRunnerKit:
+    type: library.static
+    platform: macOS
+    sources: [Sources/DevBarRunnerKit]
+    dependencies:
+      - target: DevBarCore
+  DevBarRunner:
+    type: tool
+    platform: macOS
+    sources: [Sources/DevBarRunner]
+    dependencies:
+      - target: DevBarCore
+      - target: DevBarRunnerKit
+  DevBar:
+    type: application
+    platform: macOS
+    sources: [Sources/DevBarApp]
+    resources: [Resources]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.calo.DevBar
+        INFOPLIST_FILE: Configuration/DevBar-Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+    dependencies:
+      - target: DevBarCore
+      - target: DevBarRunner
+        embed: false
+        link: false
+    postBuildScripts:
+      - name: Embed DevBarRunner
+        inputFiles:
+          - "$(BUILT_PRODUCTS_DIR)/DevBarRunner"
+        script: |
+          set -euo pipefail
+          helper_dir="${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/Helpers"
+          mkdir -p "${helper_dir}"
+          cp -f "${BUILT_PRODUCTS_DIR}/DevBarRunner" "${helper_dir}/DevBarRunner"
+          chmod 755 "${helper_dir}/DevBarRunner"
+        outputFiles:
+          - "$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Helpers/DevBarRunner"
+  DevBarCoreTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources: [Tests/DevBarCoreTests]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: DevBarCore
+  DevBarRunnerKitTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources: [Tests/DevBarRunnerKitTests]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: DevBarCore
+      - target: DevBarRunnerKit
+  DevBarUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources: [Tests/DevBarUITests]
+    settings:
+      base:
+        TEST_TARGET_NAME: DevBar
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: DevBar
+schemes:
+  DevBar:
+    build:
+      targets:
+        DevBar: all
+        DevBarRunner: all
+    test:
+      targets:
+        - DevBarCoreTests
+        - DevBarRunnerKitTests
+        - DevBarUITests
+  DevBarCoreTests:
+    build:
+      targets:
+        DevBarCoreTests: all
+    test:
+      targets:
+        - DevBarCoreTests
+  DevBarRunnerKitTests:
+    build:
+      targets:
+        DevBarRunnerKitTests: all
+    test:
+      targets:
+        - DevBarRunnerKitTests
+  DevBarUITests:
+    build:
+      targets:
+        DevBarUITests: all
+    test:
+      targets:
+        - DevBarUITests

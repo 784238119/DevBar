@@ -181,11 +181,11 @@ targets:
     platform: macOS
     sources: [Sources/DevBarApp]
     resources: [Resources]
-    info:
-      path: Configuration/DevBar-Info.plist
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.calo.DevBar
+        INFOPLIST_FILE: Configuration/DevBar-Info.plist
+        GENERATE_INFOPLIST_FILE: NO
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "-"
     dependencies:
@@ -209,12 +209,18 @@ targets:
     type: bundle.unit-test
     platform: macOS
     sources: [Tests/DevBarCoreTests]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
     dependencies:
       - target: DevBarCore
   DevBarRunnerKitTests:
     type: bundle.unit-test
     platform: macOS
     sources: [Tests/DevBarRunnerKitTests]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
     dependencies:
       - target: DevBarCore
       - target: DevBarRunnerKit
@@ -225,6 +231,7 @@ targets:
     settings:
       base:
         TEST_TARGET_NAME: DevBar
+        GENERATE_INFOPLIST_FILE: YES
     dependencies:
       - target: DevBar
 schemes:
