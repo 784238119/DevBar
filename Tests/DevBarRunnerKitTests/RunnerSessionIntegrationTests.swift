@@ -9,6 +9,10 @@ final class RunnerSessionIntegrationTests: XCTestCase {
         let event = try makePipe()
         let stdout = try makePipe()
         let stderr = try makePipe()
+        // In production the command writer lives only in the GUI process. This
+        // in-process integration fixture must prevent zsh from inheriting that
+        // writer, otherwise closing it cannot produce EOF at the Runner.
+        try setCloseOnExec(command.write)
         defer {
             [event.read, stdout.read, stderr.read].forEach { close($0) }
         }
@@ -57,6 +61,13 @@ final class RunnerSessionIntegrationTests: XCTestCase {
                 guard count > 0 else { throw POSIXError(.EIO) }
                 offset += count
             }
+        }
+    }
+
+    private func setCloseOnExec(_ descriptor: Int32) throws {
+        let flags = fcntl(descriptor, F_GETFD)
+        guard flags >= 0, fcntl(descriptor, F_SETFD, flags | FD_CLOEXEC) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
         }
     }
 

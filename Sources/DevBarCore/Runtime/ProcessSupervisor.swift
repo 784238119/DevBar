@@ -50,6 +50,8 @@ public actor ProcessSupervisor {
     private let zshResolver: any ZshResolving
     private let environmentProviderFactory: any ShellEnvironmentProvidingFactory
     private let logStore: (any ServiceLogStoring)?
+    private let healthChecker: HealthChecker
+    private let noneRunningDelay: Duration
     private let fileManager: FileManager
 
     private var providersByZshPath: [String: any ShellEnvironmentProviding] = [:]
@@ -57,18 +59,25 @@ public actor ProcessSupervisor {
     private var runIDs: [UUID: UUID] = [:]
     private var stateContinuations: [UUID: AsyncStream<ServiceRuntime>.Continuation] = [:]
     private var eventContinuations: [UUID: AsyncStream<SupervisedServiceRuntimeEvent>.Continuation] = [:]
+    private var runnerStartedRuns: [UUID: UUID] = [:]
+    private var noneHealthTasks: [UUID: Task<Void, Never>] = [:]
+    private var healthConfigs: [UUID: (runID: UUID, config: HealthCheckConfig)] = [:]
 
     public init(
         runner: any RunnerControlling = RunnerClient(),
         zshResolver: any ZshResolving = ZshResolver(),
         environmentProviderFactory: any ShellEnvironmentProvidingFactory = DefaultShellEnvironmentProviderFactory(),
         logStore: (any ServiceLogStoring)? = nil,
+        healthChecker: HealthChecker = HealthChecker(),
+        noneRunningDelay: Duration = .seconds(1),
         fileManager: FileManager = .default
     ) {
         self.runner = runner
         self.zshResolver = zshResolver
         self.environmentProviderFactory = environmentProviderFactory
         self.logStore = logStore
+        self.healthChecker = healthChecker
+        self.noneRunningDelay = noneRunningDelay
         self.fileManager = fileManager
     }
 
@@ -111,6 +120,7 @@ public actor ProcessSupervisor {
 
         let runID = UUID()
         runIDs[serviceID] = runID
+        healthConfigs[serviceID] = (runID, service.healthCheck)
         setRuntime(.init(workspaceID: workspace.id, serviceID: serviceID, state: .starting(runID: runID)))
 
         let workingDirectory: String
@@ -184,13 +194,22 @@ public actor ProcessSupervisor {
         case .stopped, .failed, .stopping:
             return
         case .starting:
-            // No Runner exists yet. A resumed environment capture sees the stopped state and exits.
-            setRuntime(.init(workspaceID: runtime.workspaceID, serviceID: serviceID, state: .stopped))
-            return
+            guard runnerStartedRuns[serviceID] == runID else {
+                // No confirmed Runner exists yet. Invalidate this run before publishing
+                // stopped so queued Runner events cannot turn the cancellation into a failure.
+                cancelHealth(serviceID: serviceID, runID: runID)
+                runIDs.removeValue(forKey: serviceID)
+                runnerStartedRuns.removeValue(forKey: serviceID)
+                healthConfigs.removeValue(forKey: serviceID)
+                setRuntime(.init(workspaceID: runtime.workspaceID, serviceID: serviceID, state: .stopped))
+                return
+            }
+            setRuntime(.init(workspaceID: runtime.workspaceID, serviceID: serviceID, state: .stopping(runID: runID)))
         case .running, .ready, .unready:
             setRuntime(.init(workspaceID: runtime.workspaceID, serviceID: serviceID, state: .stopping(runID: runID)))
         }
 
+        cancelHealth(serviceID: serviceID, runID: runID)
         do {
             try await runner.stop(runID: runID)
         } catch {
@@ -234,10 +253,9 @@ public actor ProcessSupervisor {
         runID: UUID
     ) async {
         guard isCurrentRun(runID, for: serviceID), event.associatedRunID == runID else { return }
-        publish(.init(workspaceID: workspaceID, serviceID: serviceID, event: event))
         switch event {
         case let .runner(runnerEvent):
-            handle(runnerEvent, serviceID: serviceID, runID: runID)
+            await handle(runnerEvent, serviceID: serviceID, runID: runID)
         case let .stdout(eventRunID, data) where eventRunID == runID:
             await logStore?.append(
                 data: data,
@@ -264,15 +282,22 @@ public actor ProcessSupervisor {
         case .stdout, .stderr, .channelFailure:
             break
         }
+        // Publish only after side effects such as log persistence complete. App-facing
+        // observers can then read any warning emitted by the same event without racing it.
+        publish(.init(workspaceID: workspaceID, serviceID: serviceID, event: event))
     }
 
-    private func handle(_ event: RunnerEvent, serviceID: UUID, runID: UUID) {
+    private func handle(_ event: RunnerEvent, serviceID: UUID, runID: UUID) async {
         guard event.associatedRunID == runID else { return }
         guard let runtime = runtimes[serviceID] else { return }
         switch event {
         case .started:
             if case .starting = runtime.state {
-                setRuntime(.init(workspaceID: runtime.workspaceID, serviceID: serviceID, state: .running(runID: runID)))
+                runnerStartedRuns[serviceID] = runID
+                guard healthConfigs[serviceID]?.runID == runID,
+                      let healthConfig = healthConfigs[serviceID]?.config
+                else { return }
+                await startHealth(serviceID: serviceID, runID: runID, config: healthConfig)
             }
         case .stopPhase:
             break
@@ -311,6 +336,64 @@ public actor ProcessSupervisor {
         }
     }
 
+    private func startHealth(serviceID: UUID, runID: UUID, config: HealthCheckConfig) async {
+        noneHealthTasks.removeValue(forKey: serviceID)?.cancel()
+        await healthChecker.cancel(serviceID: serviceID)
+        switch config {
+        case .none:
+            let delay = noneRunningDelay
+            noneHealthTasks[serviceID] = Task { [weak self] in
+                do {
+                    try await Task.sleep(for: delay)
+                } catch {
+                    return
+                }
+                await self?.markNoneHealthRunning(serviceID: serviceID, runID: runID)
+            }
+        case .http, .tcp:
+            let stream = await healthChecker.start(serviceID: serviceID, runID: runID, config: config)
+            Task { [weak self] in
+                for await result in stream {
+                    await self?.handleHealth(result, serviceID: serviceID, runID: runID)
+                }
+            }
+        }
+    }
+
+    private func markNoneHealthRunning(serviceID: UUID, runID: UUID) {
+        guard isCurrentRun(runID, for: serviceID), runnerStartedRuns[serviceID] == runID,
+              let runtime = runtimes[serviceID], case .starting = runtime.state
+        else { return }
+        noneHealthTasks.removeValue(forKey: serviceID)
+        setRuntime(.init(workspaceID: runtime.workspaceID, serviceID: serviceID, state: .running(runID: runID)))
+    }
+
+    private func handleHealth(_ result: HealthProbeResult, serviceID: UUID, runID: UUID) {
+        guard isCurrentRun(runID, for: serviceID), runnerStartedRuns[serviceID] == runID,
+              let runtime = runtimes[serviceID]
+        else { return }
+        switch runtime.state {
+        case .stopping, .stopped, .failed:
+            return
+        case .starting, .running, .ready, .unready:
+            let state: ServiceState
+            switch result {
+            case .ready:
+                state = .ready(runID: runID)
+            case let .unready(reason):
+                state = .unready(runID: runID, reason: reason)
+            }
+            setRuntime(.init(workspaceID: runtime.workspaceID, serviceID: serviceID, state: state))
+        }
+    }
+
+    private func cancelHealth(serviceID: UUID, runID: UUID? = nil) {
+        noneHealthTasks.removeValue(forKey: serviceID)?.cancel()
+        Task { [healthChecker] in
+            await healthChecker.cancel(serviceID: serviceID, runID: runID)
+        }
+    }
+
     private func provider(for zshPath: String) -> any ShellEnvironmentProviding {
         if let provider = providersByZshPath[zshPath] { return provider }
         let provider = environmentProviderFactory.makeProvider(zshPath: zshPath)
@@ -336,11 +419,17 @@ public actor ProcessSupervisor {
 
     private func fail(serviceID: UUID, runID: UUID, failure: ServiceFailure) {
         guard isCurrentRun(runID, for: serviceID), let runtime = runtimes[serviceID] else { return }
+        cancelHealth(serviceID: serviceID, runID: runID)
+        runnerStartedRuns.removeValue(forKey: serviceID)
+        healthConfigs.removeValue(forKey: serviceID)
         setRuntime(.init(workspaceID: runtime.workspaceID, serviceID: serviceID, state: .failed(failure)))
     }
 
     private func setStopped(serviceID: UUID) {
         guard let runtime = runtimes[serviceID] else { return }
+        cancelHealth(serviceID: serviceID, runID: runIDs[serviceID])
+        runnerStartedRuns.removeValue(forKey: serviceID)
+        healthConfigs.removeValue(forKey: serviceID)
         setRuntime(.init(workspaceID: runtime.workspaceID, serviceID: serviceID, state: .stopped))
     }
 

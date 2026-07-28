@@ -21,6 +21,22 @@ public enum ConfigurationStoreError: Error, Equatable, Sendable, LocalizedError 
     }
 }
 
+public enum ConfigurationLoadSource: Equatable, Sendable {
+    case primary
+    case backup(preservedCorruptURL: URL)
+    case empty
+}
+
+public struct ConfigurationLoadResult: Equatable, Sendable {
+    public let configuration: AppConfig
+    public let source: ConfigurationLoadSource
+
+    public init(configuration: AppConfig, source: ConfigurationLoadSource) {
+        self.configuration = configuration
+        self.source = source
+    }
+}
+
 public actor ConfigurationStore {
     private let paths: AppPaths
     private let fileManager: FileManager
@@ -36,9 +52,16 @@ public actor ConfigurationStore {
     }
 
     public func load() throws -> AppConfig {
+        try loadResult().configuration
+    }
+
+    /// Provides recovery diagnostics without changing the long-standing `load()` API.
+    /// Callers can warn the user when a valid backup was selected after preserving a
+    /// corrupt primary configuration.
+    public func loadResult() throws -> ConfigurationLoadResult {
         try ensureApplicationSupportDirectory()
         guard fileManager.fileExists(atPath: paths.configURL.path) else {
-            return .empty
+            return ConfigurationLoadResult(configuration: .empty, source: .empty)
         }
 
         let primaryData: Data
@@ -49,7 +72,7 @@ public actor ConfigurationStore {
         }
 
         do {
-            return try decodeConfig(primaryData)
+            return ConfigurationLoadResult(configuration: try decodeConfig(primaryData), source: .primary)
         } catch let error as ConfigurationStoreError {
             if case .unsupportedSchemaVersion = error {
                 throw error
@@ -94,13 +117,16 @@ public actor ConfigurationStore {
         try atomicallyRename(temporaryURL, over: paths.configURL)
     }
 
-    private func recoverFromBackup(afterPreserving corruptData: Data) throws -> AppConfig {
-        try preserveCorruptConfiguration(corruptData)
+    private func recoverFromBackup(afterPreserving corruptData: Data) throws -> ConfigurationLoadResult {
+        let preservedCorruptURL = try preserveCorruptConfiguration(corruptData)
         guard fileManager.fileExists(atPath: paths.backupConfigURL.path) else {
             throw ConfigurationStoreError.corruptConfigurationWithoutBackup
         }
         do {
-            return try decodeConfig(Data(contentsOf: paths.backupConfigURL))
+            return ConfigurationLoadResult(
+                configuration: try decodeConfig(Data(contentsOf: paths.backupConfigURL)),
+                source: .backup(preservedCorruptURL: preservedCorruptURL)
+            )
         } catch let error as ConfigurationStoreError {
             if case .unsupportedSchemaVersion = error {
                 throw error
@@ -162,11 +188,13 @@ public actor ConfigurationStore {
         }
     }
 
-    private func preserveCorruptConfiguration(_ data: Data) throws {
+    @discardableResult
+    private func preserveCorruptConfiguration(_ data: Data) throws -> URL {
         let timestamp = Int(Date().timeIntervalSince1970 * 1_000)
         let filename = "config.json.corrupt-\(timestamp)-\(UUID().uuidString)"
         let destination = paths.applicationSupport.appendingPathComponent(filename, isDirectory: false)
         try writeSynced(data, to: destination)
+        return destination
     }
 
     private func writeSynced(_ data: Data, to url: URL) throws {

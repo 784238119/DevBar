@@ -92,6 +92,86 @@ final class ProcessSupervisorTests: XCTestCase {
         await eventually { await supervisor.state(for: fixture.serviceID) == .stopped }
     }
 
+    func testHealthTogglesReadyAndUnreadyWithoutRestart() async {
+        let fixture = try! Fixture()
+        defer { fixture.cleanup() }
+        let runner = FakeRunner()
+        let probe = ManualHealthProbe()
+        let supervisor = fixture.supervisor(
+            runner: runner,
+            healthChecker: HealthChecker(probe: probe, pollInterval: .milliseconds(10))
+        )
+        let service = fixture.service(healthCheck: .http(URL(string: "http://127.0.0.1/health")!))
+
+        await supervisor.start(service: service, workspace: fixture.workspace)
+        let requests = await runner.launchedRequests
+        let request = try! XCTUnwrap(requests.first)
+        await runner.emit(.runner(.started(runID: request.runID, pid: 1, pgid: 1)), for: request.runID)
+        await eventually { await probe.invocationCount == 1 }
+        await probe.resume(at: 0, with: .ready)
+        await eventually { await supervisor.state(for: fixture.serviceID) == .ready(runID: request.runID) }
+
+        await eventually { await probe.invocationCount == 2 }
+        await probe.resume(at: 1, with: .unready("port closed"))
+        await eventually {
+            await supervisor.state(for: fixture.serviceID) == .unready(runID: request.runID, reason: "port closed")
+        }
+        let requestCount = await runner.launchCount
+        XCTAssertEqual(requestCount, 1)
+    }
+
+    func testStaleHealthResultAfterRestartCannotChangeNewRun() async {
+        let fixture = try! Fixture()
+        defer { fixture.cleanup() }
+        let runner = FakeRunner()
+        let probe = ManualHealthProbe()
+        let supervisor = fixture.supervisor(
+            runner: runner,
+            healthChecker: HealthChecker(probe: probe, pollInterval: .seconds(30))
+        )
+        let service = fixture.service(healthCheck: .http(URL(string: "http://127.0.0.1/health")!))
+
+        await supervisor.start(service: service, workspace: fixture.workspace)
+        let firstRequests = await runner.launchedRequests
+        let first = try! XCTUnwrap(firstRequests.first)
+        await runner.emit(.runner(.started(runID: first.runID, pid: 1, pgid: 1)), for: first.runID)
+        await eventually { await probe.invocationCount == 1 }
+        await runner.emit(.runner(.exited(runID: first.runID, code: 1, signal: nil)), for: first.runID)
+        await eventually { await supervisor.state(for: fixture.serviceID) == .failed(.unexpectedExit) }
+
+        await supervisor.start(service: service, workspace: fixture.workspace)
+        let secondRequests = await runner.launchedRequests
+        let second = try! XCTUnwrap(secondRequests.last)
+        XCTAssertNotEqual(first.runID, second.runID)
+        await runner.emit(.runner(.started(runID: second.runID, pid: 2, pgid: 2)), for: second.runID)
+        await eventually { await probe.invocationCount == 2 }
+
+        await probe.resume(at: 0, with: .ready)
+        try? await Task.sleep(for: .milliseconds(40))
+        let staleResultState = await supervisor.state(for: fixture.serviceID)
+        XCTAssertEqual(staleResultState, .starting(runID: second.runID))
+        await probe.resume(at: 1, with: .ready)
+        await eventually { await supervisor.state(for: fixture.serviceID) == .ready(runID: second.runID) }
+    }
+
+    func testNoneHealthDelayCannotReviveStoppedService() async {
+        let fixture = try! Fixture()
+        defer { fixture.cleanup() }
+        let runner = FakeRunner()
+        let supervisor = fixture.supervisor(runner: runner, noneRunningDelay: .milliseconds(100))
+
+        await supervisor.start(service: fixture.service(), workspace: fixture.workspace)
+        let requests = await runner.launchedRequests
+        let request = try! XCTUnwrap(requests.first)
+        await runner.emit(.runner(.started(runID: request.runID, pid: 1, pgid: 1)), for: request.runID)
+        await supervisor.stop(serviceID: fixture.serviceID)
+        await runner.emit(.runner(.exited(runID: request.runID, code: 0, signal: nil)), for: request.runID)
+        await eventually { await supervisor.state(for: fixture.serviceID) == .stopped }
+        try? await Task.sleep(for: .milliseconds(150))
+        let laterState = await supervisor.state(for: fixture.serviceID)
+        XCTAssertEqual(laterState, .stopped)
+    }
+
     func testLogInitializationFailurePreventsRunnerLaunch() async {
         let fixture = try! Fixture()
         defer { fixture.cleanup() }
@@ -184,28 +264,61 @@ private final class Fixture {
         )
     }
 
-    func service(id: UUID? = nil, command: String = "echo test", includeInStartAll: Bool = true) -> ServiceConfig {
+    func service(
+        id: UUID? = nil,
+        command: String = "echo test",
+        includeInStartAll: Bool = true,
+        healthCheck: HealthCheckConfig = .none
+    ) -> ServiceConfig {
         ServiceConfig(
             id: id ?? serviceID,
             name: "Service",
             workingDirectory: .relative("."),
             command: command,
             includeInStartAll: includeInStartAll,
-            environment: [.init(key: "SERVICE", value: "yes")]
+            environment: [.init(key: "SERVICE", value: "yes")],
+            healthCheck: healthCheck
         )
     }
 
-    func supervisor(runner: FakeRunner, logStore: (any ServiceLogStoring)? = nil) -> ProcessSupervisor {
+    func supervisor(
+        runner: FakeRunner,
+        logStore: (any ServiceLogStoring)? = nil,
+        healthChecker: HealthChecker = HealthChecker(probe: TestReadyProbe()),
+        noneRunningDelay: Duration = .milliseconds(10)
+    ) -> ProcessSupervisor {
         ProcessSupervisor(
             runner: runner,
             zshResolver: TestZshResolver(),
             environmentProviderFactory: TestEnvironmentProviderFactory(),
-            logStore: logStore
+            logStore: logStore,
+            healthChecker: healthChecker,
+            noneRunningDelay: noneRunningDelay
         )
     }
 
     func cleanup() {
         try? FileManager.default.removeItem(at: root)
+    }
+}
+
+private actor TestReadyProbe: HealthProbing {
+    func probe(_ configuration: HealthCheckConfig) async -> HealthProbeResult { .ready }
+}
+
+private actor ManualHealthProbe: HealthProbing {
+    private var continuations: [CheckedContinuation<HealthProbeResult, Never>?] = []
+    private(set) var invocationCount = 0
+
+    func probe(_ configuration: HealthCheckConfig) async -> HealthProbeResult {
+        invocationCount += 1
+        return await withCheckedContinuation { continuations.append($0) }
+    }
+
+    func resume(at index: Int, with result: HealthProbeResult) {
+        guard continuations.indices.contains(index), let continuation = continuations[index] else { return }
+        continuations[index] = nil
+        continuation.resume(returning: result)
     }
 }
 

@@ -53,13 +53,20 @@ final class ConfigurationStoreTests: XCTestCase {
         let corruptBytes = Data("{ definitely not JSON".utf8)
         try corruptBytes.write(to: paths.configURL)
 
-        let recovered = try await store.load()
-        XCTAssertEqual(recovered, backup)
+        let recovered = try await store.loadResult()
+        XCTAssertEqual(recovered.configuration, backup)
+        guard case let .backup(preservedCorruptURL) = recovered.source else {
+            return XCTFail("Expected backup recovery diagnostics")
+        }
 
         let siblings = try FileManager.default.contentsOfDirectory(at: paths.applicationSupport, includingPropertiesForKeys: nil)
         let corruptCopy = try XCTUnwrap(siblings.first { $0.lastPathComponent.hasPrefix("config.json.corrupt-") })
         XCTAssertEqual(try Data(contentsOf: corruptCopy), corruptBytes)
         XCTAssertEqual(try permissions(at: corruptCopy), 0o600)
+        XCTAssertEqual(
+            preservedCorruptURL.resolvingSymlinksInPath(),
+            corruptCopy.resolvingSymlinksInPath()
+        )
     }
 
     func testSaveOverCorruptPrimaryPreservesOriginalBytesBeforeReplacement() async throws {
@@ -80,8 +87,9 @@ final class ConfigurationStoreTests: XCTestCase {
 
     func testMissingConfigReturnsEmptyConfig() async throws {
         let store = ConfigurationStore(paths: paths)
-        let loaded = try await store.load()
-        XCTAssertEqual(loaded, .empty)
+        let loaded = try await store.loadResult()
+        XCTAssertEqual(loaded.configuration, .empty)
+        XCTAssertEqual(loaded.source, .empty)
         XCTAssertFalse(FileManager.default.fileExists(atPath: paths.configURL.path))
     }
 
