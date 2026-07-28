@@ -14,8 +14,9 @@ final class MenuBarFlowUITests: XCTestCase {
     func testFirstLaunchOpensSettingsThenShowsEmptyMenuCTA() throws {
         let app = try launch(configurationJSON: Self.emptyConfiguration)
 
-        XCTAssertTrue(app.descendants(matching: .any)["settings.placeholder"].waitForExistence(timeout: 3))
-        app.buttons["settings.begin"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["settings.root"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["添加第一个工作区"].exists)
+        app.buttons["取消"].click()
 
         XCTAssertTrue(app.descendants(matching: .any)["menu.panel"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.staticTexts["尚未配置工作区"].exists)
@@ -44,6 +45,29 @@ final class MenuBarFlowUITests: XCTestCase {
         for forbidden in ["开机自启", "登录启动"] {
             XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", forbidden)).firstMatch.exists)
         }
+    }
+
+    func testSettingsWorkspaceAndServiceEditorAreUsable() throws {
+        let app = try launch(configurationJSON: Self.museCubeConfiguration)
+        XCTAssertTrue(app.buttons["menu.openSettings"].waitForExistence(timeout: 3))
+        app.buttons["menu.openSettings"].click()
+
+        XCTAssertTrue(app.descendants(matching: .any)["settings.root"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.textFields.matching(NSPredicate(format: "value == %@", "MuseCube")).firstMatch.exists)
+        XCTAssertTrue(app.buttons["service.add"].exists)
+        app.buttons["service.add"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["service.editor"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["命令通过非交互 zsh 在前台运行"].exists)
+    }
+
+    func testLogsWindowOpensFromMenu() throws {
+        let app = try launch(configurationJSON: Self.museCubeConfiguration)
+        XCTAssertTrue(app.buttons["menu.openLogs"].waitForExistence(timeout: 3))
+        app.buttons["menu.openLogs"].click()
+
+        XCTAssertTrue(app.descendants(matching: .any)["logs.window"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["服务日志"].exists)
+        XCTAssertTrue(app.staticTexts["暂无日志"].exists)
     }
 
     private func launch(configurationJSON: String) throws -> XCUIApplication {

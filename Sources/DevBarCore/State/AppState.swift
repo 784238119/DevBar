@@ -31,6 +31,30 @@ public protocol LogWarningProviding: Sendable {
 
 extension LogStore: LogWarningProviding {}
 
+public protocol ShellEnvironmentRefreshing: Sendable {
+    func refreshShellEnvironment(preferences: PreferencesConfig) async throws -> ZshResolution
+}
+
+extension ProcessSupervisor: ShellEnvironmentRefreshing {}
+
+private actor LegacyShellEnvironmentRefresher: ShellEnvironmentRefreshing {
+    private let provider: any ShellEnvironmentProviding
+
+    init(provider: any ShellEnvironmentProviding) {
+        self.provider = provider
+    }
+
+    func refreshShellEnvironment(preferences: PreferencesConfig) async throws -> ZshResolution {
+        _ = try await provider.refresh()
+        let requestedPath = preferences.shellPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        return ZshResolution(
+            path: requestedPath.isEmpty ? "/bin/zsh" : requestedPath,
+            source: requestedPath.isEmpty ? .fallback : .shellEnvironment,
+            warning: nil
+        )
+    }
+}
+
 public enum AppAlertKind: Equatable, Sendable {
     case configurationRecovery
     case shellEnvironment
@@ -72,6 +96,8 @@ public final class AppState {
     public private(set) var logWarnings: [LogStoreWarning] = []
     public private(set) var isConfigurationReady = false
     public private(set) var isShellEnvironmentReady = false
+    public private(set) var isShellEnvironmentRefreshing = false
+    public private(set) var resolvedShellPath: String?
 
     public var isFirstLaunch: Bool { config.workspaces.isEmpty }
 
@@ -90,7 +116,7 @@ public final class AppState {
 
     private let configurationStore: any ConfigurationStoring
     private let supervisor: any ProcessSupervising
-    private let shellEnvironment: any ShellEnvironmentProviding
+    private let shellEnvironmentRefresher: any ShellEnvironmentRefreshing
     private let logs: any LogWarningProviding
     private var configurationWarning: AppAlert?
     // These references are created and replaced only on the main actor. They are kept
@@ -98,18 +124,27 @@ public final class AppState {
     @ObservationIgnored nonisolated(unsafe) private var startupTask: Task<Void, Never>?
     @ObservationIgnored nonisolated(unsafe) private var stateSubscriptionTask: Task<Void, Never>?
     @ObservationIgnored nonisolated(unsafe) private var eventSubscriptionTask: Task<Void, Never>?
+    @ObservationIgnored nonisolated(unsafe) private var shellRefreshTask: Task<ShellRefreshOutcome, Never>?
+    private var shellRefreshPreferenceKey: String?
+    private var shellRefreshGeneration: UInt64 = 0
+    private var preparedShellPreferenceKey: String?
+    private var preparedShellResolution: ZshResolution?
     private var didStart = false
 
     public init(
         configurationStore: any ConfigurationStoring,
         supervisor: any ProcessSupervising,
         shellEnvironment: any ShellEnvironmentProviding,
+        shellEnvironmentRefresher: (any ShellEnvironmentRefreshing)? = nil,
         logs: any LogWarningProviding,
         startsImmediately: Bool = true
     ) {
         self.configurationStore = configurationStore
         self.supervisor = supervisor
-        self.shellEnvironment = shellEnvironment
+        self.shellEnvironmentRefresher =
+            shellEnvironmentRefresher
+            ?? (supervisor as? any ShellEnvironmentRefreshing)
+            ?? LegacyShellEnvironmentRefresher(provider: shellEnvironment)
         self.logs = logs
         if startsImmediately {
             start()
@@ -120,6 +155,7 @@ public final class AppState {
         startupTask?.cancel()
         stateSubscriptionTask?.cancel()
         eventSubscriptionTask?.cancel()
+        shellRefreshTask?.cancel()
     }
 
     /// Starts the one-time configuration load, shell-cache warmup, and actor streams.
@@ -130,7 +166,9 @@ public final class AppState {
         subscribeToSupervisor()
         startupTask = Task { [weak self] in
             await self?.loadInitialConfiguration()
-            await self?.refreshShellEnvironment()
+            if self?.isConfigurationReady == true {
+                await self?.refreshShellEnvironment()
+            }
             await self?.refreshLogWarnings()
         }
     }
@@ -164,6 +202,31 @@ public final class AppState {
 
     public func save(_ newConfig: AppConfig) async {
         do {
+            try await saveOrThrow(newConfig)
+        } catch {
+            // saveOrThrow has already published the user-facing AppAlert.
+        }
+    }
+
+    /// Persists and adopts a configuration as one main-actor operation. Settings uses
+    /// the throwing form so a failed disk write can never be presented as a success.
+    public func saveOrThrow(_ newConfig: AppConfig) async throws {
+        let originalShellKey = normalizedShellPath(config.preferences.shellPath)
+        let newShellKey = normalizedShellPath(newConfig.preferences.shellPath)
+        let shellPathChanged = originalShellKey != newShellKey
+        let shellPreparationRequired = shellPathChanged || !isShellEnvironmentReady
+        if shellPreparationRequired, preparedShellPreferenceKey != newShellKey {
+            guard await refreshShellEnvironment(preferences: newConfig.preferences) else {
+                throw AppStateSaveError.shellEnvironmentUnavailable
+            }
+        }
+        guard normalizedShellPath(config.preferences.shellPath) == originalShellKey else {
+            let message = "Configuration changed while the shell environment was refreshing. Review the latest settings and save again."
+            showAlert(.save, message)
+            throw AppStateSaveError.configurationChanged
+        }
+
+        do {
             try await configurationStore.save(newConfig)
             config = newConfig
             isConfigurationReady = true
@@ -171,19 +234,95 @@ public final class AppState {
             if alert?.kind == .configurationRecovery || alert?.kind == .save {
                 alert = nil
             }
+            if shellPathChanged {
+                resolvedShellPath = preparedShellResolution?.path
+                isShellEnvironmentReady = preparedShellPreferenceKey == newShellKey
+                preparedShellPreferenceKey = nil
+                preparedShellResolution = nil
+                if !isShellEnvironmentReady {
+                    showAlert(.shellEnvironment, "The saved shell environment is not ready. Refresh it before starting services.")
+                }
+            }
         } catch {
             showAlert(.save, error.localizedDescription)
+            throw error
         }
     }
 
-    public func refreshShellEnvironment() async {
-        do {
-            _ = try await shellEnvironment.cachedOrRefresh()
-            isShellEnvironmentReady = true
+    /// UI-callable retry. Calls for the same preference share one refresh task; a result
+    /// from an older shell preference can never overwrite a newer refresh.
+    @discardableResult
+    public func refreshShellEnvironment() async -> Bool {
+        await refreshShellEnvironment(preferences: config.preferences)
+    }
+
+    /// Preferences uses this overload to validate and warm a draft zsh path before save.
+    /// The current configuration is left unchanged; starts remain blocked while it runs.
+    @discardableResult
+    public func refreshShellEnvironment(preferences: PreferencesConfig) async -> Bool {
+        let preferenceKey = normalizedShellPath(preferences.shellPath)
+        let livePreferenceKey = normalizedShellPath(config.preferences.shellPath)
+        let previousReady = isShellEnvironmentReady
+        let previousResolvedPath = resolvedShellPath
+        isShellEnvironmentReady = false
+        isShellEnvironmentRefreshing = true
+
+        let generation: UInt64
+        let task: Task<ShellRefreshOutcome, Never>
+        if let activeTask = shellRefreshTask, shellRefreshPreferenceKey == preferenceKey {
+            generation = shellRefreshGeneration
+            task = activeTask
+        } else {
+            shellRefreshTask?.cancel()
+            shellRefreshGeneration &+= 1
+            generation = shellRefreshGeneration
+            shellRefreshPreferenceKey = preferenceKey
+            let refresher = shellEnvironmentRefresher
+            task = Task {
+                do {
+                    return .success(try await refresher.refreshShellEnvironment(preferences: preferences))
+                } catch {
+                    return .failure(error.localizedDescription)
+                }
+            }
+            shellRefreshTask = task
+        }
+
+        let outcome = await task.value
+        guard generation == shellRefreshGeneration else {
+            return false
+        }
+        shellRefreshTask = nil
+        shellRefreshPreferenceKey = nil
+        isShellEnvironmentRefreshing = false
+
+        switch outcome {
+        case let .success(resolution):
+            if preferenceKey == normalizedShellPath(config.preferences.shellPath) {
+                resolvedShellPath = resolution.path
+                isShellEnvironmentReady = true
+            } else {
+                preparedShellPreferenceKey = preferenceKey
+                preparedShellResolution = resolution
+                if livePreferenceKey == normalizedShellPath(config.preferences.shellPath) {
+                    resolvedShellPath = previousResolvedPath
+                    isShellEnvironmentReady = previousReady
+                }
+            }
             if alert?.kind == .shellEnvironment { alert = nil }
-        } catch {
-            isShellEnvironmentReady = false
-            showAlert(.shellEnvironment, error.localizedDescription)
+            return true
+        case let .failure(message):
+            preparedShellPreferenceKey = nil
+            preparedShellResolution = nil
+            if preferenceKey == normalizedShellPath(config.preferences.shellPath) {
+                resolvedShellPath = nil
+                isShellEnvironmentReady = false
+            } else if livePreferenceKey == normalizedShellPath(config.preferences.shellPath) {
+                resolvedShellPath = previousResolvedPath
+                isShellEnvironmentReady = previousReady
+            }
+            showAlert(.shellEnvironment, message)
+            return false
         }
     }
 
@@ -263,6 +402,10 @@ public final class AppState {
         return true
     }
 
+    private func normalizedShellPath(_ path: String) -> String {
+        path.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private func workspaceContaining(serviceID: UUID) -> WorkspaceConfig? {
         config.workspaces.first { workspace in workspace.services.contains(where: { $0.id == serviceID }) }
     }
@@ -290,5 +433,24 @@ public final class AppState {
     private func isFailed(_ state: ServiceState) -> Bool {
         if case .failed = state { return true }
         return false
+    }
+}
+
+private enum ShellRefreshOutcome: Sendable {
+    case success(ZshResolution)
+    case failure(String)
+}
+
+public enum AppStateSaveError: Error, Equatable, Sendable, LocalizedError {
+    case shellEnvironmentUnavailable
+    case configurationChanged
+
+    public var errorDescription: String? {
+        switch self {
+        case .shellEnvironmentUnavailable:
+            "The selected shell environment is unavailable. Refresh it and try again."
+        case .configurationChanged:
+            "The configuration changed while saving. Review the latest settings and try again."
+        }
     }
 }

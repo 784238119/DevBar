@@ -190,6 +190,30 @@ final class ProcessSupervisorTests: XCTestCase {
         XCTAssertTrue(message.contains("disk unavailable"))
     }
 
+    func testSavedLogRotationPreferencesAreAppliedBeforeLogPreparation() async {
+        let fixture = try! Fixture()
+        defer { fixture.cleanup() }
+        let runner = FakeRunner()
+        let logger = FakeLogStore()
+        let supervisor = fixture.supervisor(runner: runner, logStore: logger)
+        let preferences = PreferencesConfig(
+            shellPath: "",
+            logFileSizeMiB: 17,
+            logFileCount: 6,
+            sigintGraceSeconds: 8,
+            sigtermGraceSeconds: 3
+        )
+
+        await supervisor.start(
+            service: fixture.service(),
+            workspace: fixture.workspace,
+            preferences: preferences
+        )
+
+        let configurations = await logger.configurations
+        XCTAssertEqual(configurations, [.init(logFileSizeMiB: 17, fileCount: 6)])
+    }
+
     func testRuntimeOutputCarriesStableOwnershipAndRoutesToLogStore() async {
         let fixture = try! Fixture()
         defer { fixture.cleanup() }
@@ -372,6 +396,11 @@ private actor FakeRunner: RunnerControlling {
 }
 
 private actor FakeLogStore: ServiceLogStoring {
+    struct Configuration: Equatable, Sendable {
+        let logFileSizeMiB: Int
+        let fileCount: Int
+    }
+
     struct Appended: Equatable, Sendable {
         let data: Data
         let stream: LogStream
@@ -382,9 +411,14 @@ private actor FakeLogStore: ServiceLogStoring {
 
     private let prepareError: String?
     private(set) var appended: [Appended] = []
+    private(set) var configurations: [Configuration] = []
 
     init(prepareError: String? = nil) {
         self.prepareError = prepareError
+    }
+
+    func configure(logFileSizeMiB: Int, fileCount: Int) async throws {
+        configurations.append(.init(logFileSizeMiB: logFileSizeMiB, fileCount: fileCount))
     }
 
     func prepare(workspaceID: UUID, serviceID: UUID) async throws {

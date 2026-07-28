@@ -110,16 +110,124 @@ final class AppStateTests: XCTestCase {
         XCTAssertTrue(appState.alert?.message.contains("config.json.bak") == true)
     }
 
+    func testStartupResolvesAndRefreshesConfiguredShellPath() async throws {
+        let configuredPath = "/opt/homebrew/bin/zsh"
+        let refresher = ControlledShellEnvironmentRefresher()
+        await refresher.resolve(path: configuredPath, with: .success(resolution(path: configuredPath)))
+        let appState = makeAppState(
+            configuration: .init(result: .success(config(workspaces: [], shellPath: configuredPath))),
+            shellRefresher: refresher
+        )
+
+        appState.start()
+        try await waitUntil { appState.isShellEnvironmentReady }
+
+        XCTAssertEqual(appState.resolvedShellPath, configuredPath)
+        let requestedPaths = await refresher.requestedPaths()
+        XCTAssertEqual(requestedPaths, [configuredPath])
+    }
+
+    func testChangedShellBlocksStartsUntilRefreshSucceeds() async throws {
+        let oldPath = "/bin/zsh"
+        let newPath = "/opt/devbar/zsh"
+        let workspace = workspace()
+        let refresher = ControlledShellEnvironmentRefresher()
+        await refresher.resolve(path: oldPath, with: .success(resolution(path: oldPath)))
+        let supervisor = FakeSupervisor()
+        let appState = makeAppState(
+            configuration: .init(result: .success(config(workspaces: [workspace], shellPath: oldPath))),
+            supervisor: supervisor,
+            shellRefresher: refresher
+        )
+        appState.start()
+        try await waitUntil { appState.isShellEnvironmentReady }
+
+        let saveTask = Task {
+            await appState.save(config(workspaces: [workspace], shellPath: newPath))
+        }
+        try await waitUntilRequested(newPath, by: refresher)
+        XCTAssertTrue(appState.isShellEnvironmentRefreshing)
+        XCTAssertEqual(appState.config.preferences.shellPath, oldPath)
+        await appState.startAll(workspaceID: workspace.id)
+        let startsWhileRefreshing = await supervisor.startedWorkspaceIDs()
+        XCTAssertEqual(startsWhileRefreshing, [])
+
+        await refresher.resolve(path: newPath, with: .success(resolution(path: newPath)))
+        await saveTask.value
+        XCTAssertTrue(appState.isShellEnvironmentReady)
+        XCTAssertEqual(appState.resolvedShellPath, newPath)
+
+        await appState.startAll(workspaceID: workspace.id)
+        let startsAfterRefresh = await supervisor.startedWorkspaceIDs()
+        XCTAssertEqual(startsAfterRefresh, [workspace.id])
+    }
+
+    func testOlderFailedRefreshCannotOverwriteNewShellSuccess() async throws {
+        let oldPath = "/bin/zsh"
+        let firstPath = "/opt/first/zsh"
+        let latestPath = "/opt/latest/zsh"
+        let refresher = ControlledShellEnvironmentRefresher()
+        await refresher.resolve(path: oldPath, with: .success(resolution(path: oldPath)))
+        let appState = makeAppState(
+            configuration: .init(result: .success(config(workspaces: [], shellPath: oldPath))),
+            shellRefresher: refresher
+        )
+        appState.start()
+        try await waitUntil { appState.isShellEnvironmentReady }
+
+        let firstSave = Task {
+            await appState.save(config(workspaces: [], shellPath: firstPath))
+        }
+        try await waitUntilRequested(firstPath, by: refresher)
+        let latestSave = Task {
+            await appState.save(config(workspaces: [], shellPath: latestPath))
+        }
+        try await waitUntilRequested(latestPath, by: refresher)
+
+        await refresher.resolve(path: latestPath, with: .success(resolution(path: latestPath)))
+        await latestSave.value
+        await refresher.resolve(path: firstPath, with: .failure(FakeError.shell))
+        await firstSave.value
+
+        XCTAssertEqual(appState.config.preferences.shellPath, latestPath)
+        XCTAssertEqual(appState.resolvedShellPath, latestPath)
+        XCTAssertTrue(appState.isShellEnvironmentReady)
+        XCTAssertNotEqual(appState.alert?.kind, .shellEnvironment)
+    }
+
+    func testFailedDraftShellRefreshIsNotPersisted() async throws {
+        let oldPath = "/bin/zsh"
+        let invalidPath = "/missing/zsh"
+        let refresher = ControlledShellEnvironmentRefresher()
+        await refresher.resolve(path: oldPath, with: .success(resolution(path: oldPath)))
+        await refresher.resolve(path: invalidPath, with: .failure(FakeError.shell))
+        let store = FakeConfigurationStore(result: .success(config(workspaces: [], shellPath: oldPath)))
+        let appState = makeAppState(configuration: store, shellRefresher: refresher)
+        appState.start()
+        try await waitUntil { appState.isShellEnvironmentReady }
+
+        await appState.save(config(workspaces: [], shellPath: invalidPath))
+
+        XCTAssertEqual(appState.config.preferences.shellPath, oldPath)
+        XCTAssertEqual(appState.resolvedShellPath, oldPath)
+        XCTAssertTrue(appState.isShellEnvironmentReady)
+        XCTAssertEqual(appState.alert?.kind, .shellEnvironment)
+        let savedConfigurations = await store.savedConfigurations()
+        XCTAssertTrue(savedConfigurations.isEmpty)
+    }
+
     private func makeAppState(
         configuration: FakeConfigurationStore = .init(result: .success(.empty)),
         supervisor: FakeSupervisor = .init(),
         shell: FakeShellEnvironment = .init(result: .success([:])),
+        shellRefresher: (any ShellEnvironmentRefreshing)? = nil,
         logs: FakeLogs = .init(warnings: [])
     ) -> AppState {
         AppState(
             configurationStore: configuration,
             supervisor: supervisor,
             shellEnvironment: shell,
+            shellEnvironmentRefresher: shellRefresher,
             logs: logs,
             startsImmediately: false
         )
@@ -138,8 +246,14 @@ final class AppStateTests: XCTestCase {
         )
     }
 
-    private func config(workspaces: [WorkspaceConfig]) -> AppConfig {
-        AppConfig(workspaces: workspaces, preferences: .default)
+    private func config(workspaces: [WorkspaceConfig], shellPath: String = "") -> AppConfig {
+        var preferences = PreferencesConfig.default
+        preferences.shellPath = shellPath
+        return AppConfig(workspaces: workspaces, preferences: preferences)
+    }
+
+    private func resolution(path: String) -> ZshResolution {
+        ZshResolution(path: path, source: .shellEnvironment, warning: nil)
     }
 
     private func waitUntil(
@@ -153,18 +267,62 @@ final class AppStateTests: XCTestCase {
             await Task.yield()
         }
     }
+
+    private func waitUntilRequested(
+        _ path: String,
+        by refresher: ControlledShellEnvironmentRefresher,
+        timeout: Duration = .seconds(1)
+    ) async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now + timeout
+        while !(await refresher.requestedPaths()).contains(path) {
+            guard clock.now < deadline else { throw FakeError.timeout }
+            await Task.yield()
+        }
+    }
 }
 
 private enum FakeError: Error, LocalizedError {
     case configuration
+    case shell
     case timeout
 
     var errorDescription: String? {
         switch self {
         case .configuration: "Configuration could not be recovered."
+        case .shell: "Shell refresh failed."
         case .timeout: "Timed out waiting for app state."
         }
     }
+}
+
+private actor ControlledShellEnvironmentRefresher: ShellEnvironmentRefreshing {
+    private var queuedResults: [String: Result<ZshResolution, Error>] = [:]
+    private var continuations: [String: [CheckedContinuation<ZshResolution, Error>]] = [:]
+    private var requests: [String] = []
+
+    func refreshShellEnvironment(preferences: PreferencesConfig) async throws -> ZshResolution {
+        let path = preferences.shellPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        requests.append(path)
+        if let result = queuedResults.removeValue(forKey: path) {
+            return try result.get()
+        }
+        return try await withCheckedThrowingContinuation { continuation in
+            continuations[path, default: []].append(continuation)
+        }
+    }
+
+    func resolve(path: String, with result: Result<ZshResolution, Error>) {
+        guard var waiting = continuations.removeValue(forKey: path), !waiting.isEmpty else {
+            queuedResults[path] = result
+            return
+        }
+        let continuation = waiting.removeFirst()
+        if !waiting.isEmpty { continuations[path] = waiting }
+        continuation.resume(with: result)
+    }
+
+    func requestedPaths() -> [String] { requests }
 }
 
 private actor FakeConfigurationStore: ConfigurationStoring {

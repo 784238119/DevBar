@@ -52,8 +52,8 @@ public actor LogStore {
 
     private let paths: AppPaths
     private let maximumEntries: Int
-    private let maximumFileSizeBytes: Int
-    private let fileCount: Int
+    private var maximumFileSizeBytes: Int
+    private var fileCount: Int
     private let fileManager: FileManager
     private var entriesByService: [UUID: [LogEntry]] = [:]
     private var locations: [UUID: ServiceLocation] = [:]
@@ -76,6 +76,22 @@ public actor LogStore {
         self.maximumFileSizeBytes = maximumFileSizeBytes
         self.fileCount = fileCount
         self.fileManager = fileManager
+    }
+
+    /// Applies the saved rotation policy before a service starts. Writers do not hold
+    /// open file descriptors, so dropping the cache safely applies the new policy to
+    /// the next append without interrupting existing processes.
+    public func configure(logFileSizeMiB: Int, fileCount: Int) throws {
+        guard (1...100).contains(logFileSizeMiB), (1...10).contains(fileCount) else {
+            throw RotatingLogWriterError.invalidConfiguration
+        }
+        let maximumFileSizeBytes = logFileSizeMiB * 1_024 * 1_024
+        guard self.maximumFileSizeBytes != maximumFileSizeBytes || self.fileCount != fileCount else {
+            return
+        }
+        self.maximumFileSizeBytes = maximumFileSizeBytes
+        self.fileCount = fileCount
+        writers.removeAll()
     }
 
     /// Call this before a Runner is launched. Unlike append failures, initialization
@@ -164,6 +180,17 @@ public actor LogStore {
 
     public func clearView(serviceID: UUID) {
         entriesByService[serviceID] = []
+    }
+
+    /// Drops all in-memory handles after a service log directory has been moved to
+    /// Trash. The next append or load recreates a fresh UUID-derived directory.
+    public func forgetHistory(serviceID: UUID) {
+        entriesByService[serviceID] = []
+        writers[serviceID] = nil
+        locations[serviceID] = nil
+        decoders = decoders.filter { $0.key.serviceID != serviceID }
+        sanitizers = sanitizers.filter { $0.key.serviceID != serviceID }
+        loadedHistory.remove(serviceID)
     }
 
     /// Removes only the UUID-derived service directory that this store has prepared or

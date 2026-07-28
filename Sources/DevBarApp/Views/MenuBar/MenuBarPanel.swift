@@ -5,6 +5,7 @@ import SwiftUI
 struct MenuBarPanel: View {
     @Bindable var appState: AppState
     let openSettings: () -> Void
+    let openLogs: () -> Void
     let quit: () -> Void
 
     var body: some View {
@@ -116,6 +117,13 @@ struct MenuBarPanel: View {
                 Label("打开设置…", systemImage: "gearshape")
             }
             .accessibilityIdentifier("menu.openSettings")
+
+            Spacer()
+
+            Button(action: openLogs) {
+                Label("日志", systemImage: "doc.text")
+            }
+            .accessibilityIdentifier("menu.openLogs")
 
             Spacer()
 

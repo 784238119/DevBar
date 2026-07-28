@@ -8,11 +8,19 @@ extension ZshResolver: ZshResolving {}
 
 public protocol ShellEnvironmentProviding: Sendable {
     func cachedOrRefresh() async throws -> [String: String]
+    func refresh() async throws -> [String: String]
 }
 
 extension ShellEnvironmentProvider: ShellEnvironmentProviding {}
 
+public extension ShellEnvironmentProviding {
+    func refresh() async throws -> [String: String] {
+        try await cachedOrRefresh()
+    }
+}
+
 public protocol ServiceLogStoring: Sendable {
+    func configure(logFileSizeMiB: Int, fileCount: Int) async throws
     func prepare(workspaceID: UUID, serviceID: UUID) async throws
     func append(
         data: Data,
@@ -133,11 +141,7 @@ public actor ProcessSupervisor {
 
         let zsh: ZshResolution
         do {
-            var shellEnvironment = ProcessInfo.processInfo.environment
-            if !preferences.shellPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                shellEnvironment["SHELL"] = preferences.shellPath
-            }
-            zsh = try zshResolver.resolve(environment: shellEnvironment)
+            zsh = try resolveZsh(preferences: preferences)
         } catch {
             fail(serviceID: serviceID, runID: runID, failure: .zshResolution(error.localizedDescription))
             return
@@ -154,6 +158,10 @@ public actor ProcessSupervisor {
 
         guard isCurrentRun(runID, for: serviceID, expected: .starting) else { return }
         do {
+            try await logStore?.configure(
+                logFileSizeMiB: preferences.logFileSizeMiB,
+                fileCount: preferences.logFileCount
+            )
             try await logStore?.prepare(workspaceID: workspace.id, serviceID: serviceID)
         } catch {
             fail(serviceID: serviceID, runID: runID, failure: .logInitialization(error.localizedDescription))
@@ -221,6 +229,14 @@ public actor ProcessSupervisor {
         for service in workspace.services where service.includeInStartAll && state(for: service.id) == .stopped {
             await start(service: service, workspace: workspace, preferences: preferences)
         }
+    }
+
+    /// Refreshes the same per-zsh provider cache consumed by `start`, avoiding a second
+    /// application-level cache that could disagree with the supervisor.
+    public func refreshShellEnvironment(preferences: PreferencesConfig) async throws -> ZshResolution {
+        let zsh = try resolveZsh(preferences: preferences)
+        _ = try await provider(for: zsh.path).refresh()
+        return zsh
     }
 
     public func stopAll(workspaceID: UUID) async {
@@ -399,6 +415,15 @@ public actor ProcessSupervisor {
         let provider = environmentProviderFactory.makeProvider(zshPath: zshPath)
         providersByZshPath[zshPath] = provider
         return provider
+    }
+
+    private func resolveZsh(preferences: PreferencesConfig) throws -> ZshResolution {
+        var environment = ProcessInfo.processInfo.environment
+        let preferredPath = preferences.shellPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !preferredPath.isEmpty {
+            environment["SHELL"] = preferredPath
+        }
+        return try zshResolver.resolve(environment: environment)
     }
 
     private enum ExpectedState {
