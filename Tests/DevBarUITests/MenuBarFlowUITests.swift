@@ -16,7 +16,7 @@ final class MenuBarFlowUITests: XCTestCase {
 
         XCTAssertTrue(app.descendants(matching: .any)["settings.root"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["添加第一个工作区"].exists)
-        app.buttons["取消"].click()
+        app.typeKey(.escape, modifierFlags: [])
 
         XCTAssertTrue(app.descendants(matching: .any)["menu.panel"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.staticTexts["尚未配置工作区"].exists)
@@ -49,8 +49,8 @@ final class MenuBarFlowUITests: XCTestCase {
 
     func testSettingsWorkspaceAndServiceEditorAreUsable() throws {
         let app = try launch(configurationJSON: Self.museCubeConfiguration)
-        XCTAssertTrue(app.buttons["menu.openSettings"].waitForExistence(timeout: 3))
-        app.buttons["menu.openSettings"].click()
+        XCTAssertTrue(app.buttons["menu.settings"].waitForExistence(timeout: 3))
+        app.buttons["menu.settings"].click()
 
         XCTAssertTrue(app.descendants(matching: .any)["settings.root"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.textFields.matching(NSPredicate(format: "value == %@", "MuseCube")).firstMatch.exists)
@@ -60,13 +60,55 @@ final class MenuBarFlowUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["命令通过非交互 zsh 在前台运行"].exists)
     }
 
-    func testLogsWindowOpensFromMenu() throws {
+    func testPreferencesUseTheFullWindowAndCanReturnToWorkspace() throws {
         let app = try launch(configurationJSON: Self.museCubeConfiguration)
-        XCTAssertTrue(app.buttons["menu.openLogs"].waitForExistence(timeout: 3))
-        app.buttons["menu.openLogs"].click()
+        XCTAssertTrue(app.buttons["menu.settings"].waitForExistence(timeout: 3))
+        app.buttons["menu.settings"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["settings.sidebar"].waitForExistence(timeout: 3))
+
+        app.buttons["偏好设置"].click()
+
+        XCTAssertTrue(app.checkBoxes["preferences.showMenuBarIcon"].waitForExistence(timeout: 2))
+        XCTAssertFalse(app.descendants(matching: .any)["settings.sidebar"].exists)
+        XCTAssertTrue(app.buttons["preferences.returnToWorkspace"].exists)
+        XCTAssertFalse(app.buttons["preferences.addWorkspace"].exists)
+        XCTAssertFalse(app.buttons["config.check"].exists)
+
+        app.buttons["preferences.returnToWorkspace"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["settings.sidebar"].waitForExistence(timeout: 2))
+    }
+
+    func testWorkspaceNameCommitsWhenEditingEndsWithoutGlobalSaveActions() throws {
+        let app = try launch(configurationJSON: Self.museCubeConfiguration)
+        XCTAssertTrue(app.buttons["menu.settings"].waitForExistence(timeout: 3))
+        app.buttons["menu.settings"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["settings.root"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["config.save"].exists)
+        XCTAssertFalse(app.buttons["config.discard"].exists)
+
+        let nameField = app.textFields.matching(NSPredicate(format: "value == %@", "MuseCube")).firstMatch
+        XCTAssertTrue(nameField.exists)
+        nameField.click()
+        nameField.typeKey("a", modifierFlags: .command)
+        nameField.typeText("Changed")
+        app.staticTexts["主题色"].click()
+
+        XCTAssertEqual(nameField.value as? String, "Changed")
+        XCTAssertFalse(app.staticTexts["配置已保存。"].exists)
+        XCTAssertFalse(app.buttons["config.save"].exists)
+        XCTAssertFalse(app.buttons["config.discard"].exists)
+        XCTAssertFalse(app.buttons["config.check"].exists)
+    }
+
+    func testLogsWindowOpensForSelectedService() throws {
+        let app = try launch(configurationJSON: Self.museCubeConfiguration)
+        let serverLogsButton = app.buttons["查看 Server 日志"]
+        XCTAssertTrue(serverLogsButton.waitForExistence(timeout: 3))
+        serverLogsButton.click()
 
         XCTAssertTrue(app.descendants(matching: .any)["logs.window"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["服务日志"].exists)
+        XCTAssertTrue(app.staticTexts["Server"].exists)
         XCTAssertTrue(app.staticTexts["暂无日志"].exists)
     }
 

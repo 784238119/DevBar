@@ -10,9 +10,17 @@ struct LogWindowView: View {
             header
             Divider().overlay(DevBarTheme.separator.opacity(0.72))
             logContent
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             footer
         }
-        .frame(minWidth: 720, idealWidth: 900, minHeight: 440, idealHeight: 600)
+        .frame(
+            minWidth: 720,
+            idealWidth: 900,
+            maxWidth: .infinity,
+            minHeight: 440,
+            idealHeight: 600,
+            maxHeight: .infinity
+        )
         .background(background)
         .foregroundStyle(DevBarTheme.textPrimary)
         .task { await viewModel.start() }
@@ -57,7 +65,7 @@ struct LogWindowView: View {
                 }
                 .padding(.horizontal, 12)
                 .frame(height: 36)
-                .background(Color.white.opacity(0.66), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                .background(DevBarTheme.surfaceStrong, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 11, style: .continuous)
                         .stroke(DevBarTheme.separator.opacity(0.76), lineWidth: 1)
@@ -98,7 +106,7 @@ struct LogWindowView: View {
         }
         .padding(.horizontal, 22)
         .padding(.vertical, 18)
-        .background(Color.white.opacity(0.48))
+        .background(DevBarTheme.surfaceSubtle)
     }
 
     private var servicePicker: some View {
@@ -177,7 +185,7 @@ struct LogWindowView: View {
         .font(.system(size: 11, weight: .medium))
         .padding(.horizontal, 22)
         .frame(height: 42)
-        .background(Color.white.opacity(0.44))
+        .background(DevBarTheme.surfaceSubtle)
         .overlay(alignment: .top) { Divider().overlay(DevBarTheme.separator.opacity(0.65)) }
     }
 
@@ -189,7 +197,7 @@ struct LogWindowView: View {
                 .frame(height: 36)
         }
         .buttonStyle(.plain)
-        .background(Color.white.opacity(0.62), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(DevBarTheme.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .stroke(DevBarTheme.separator.opacity(0.74), lineWidth: 1)
@@ -230,7 +238,7 @@ private struct LogRowsView: View {
                 }
                 .padding(.vertical, 8)
             }
-            .background(Color.black.opacity(0.025))
+            .background(DevBarTheme.surfaceSubtle.opacity(0.55))
             .onAppear { scrollToBottom(proxy, animated: false) }
             .onChange(of: viewModel.filteredEntries.count) {
                 scrollToBottom(proxy, animated: true)

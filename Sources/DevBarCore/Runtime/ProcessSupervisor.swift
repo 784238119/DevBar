@@ -20,7 +20,7 @@ public extension ShellEnvironmentProviding {
 }
 
 public protocol ServiceLogStoring: Sendable {
-    func configure(logFileSizeMiB: Int, fileCount: Int) async throws
+    func configure(logDirectory: String, logFileSizeMiB: Int, fileCount: Int) async throws
     func prepare(workspaceID: UUID, serviceID: UUID) async throws
     func append(
         data: Data,
@@ -159,6 +159,7 @@ public actor ProcessSupervisor {
         guard isCurrentRun(runID, for: serviceID, expected: .starting) else { return }
         do {
             try await logStore?.configure(
+                logDirectory: preferences.logDirectory,
                 logFileSizeMiB: preferences.logFileSizeMiB,
                 fileCount: preferences.logFileCount
             )

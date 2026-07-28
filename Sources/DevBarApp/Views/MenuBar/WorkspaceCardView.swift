@@ -2,9 +2,12 @@ import DevBarCore
 import SwiftUI
 
 struct WorkspaceCardView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let workspace: WorkspaceConfig
     let states: [UUID: ServiceState]
     let toggleService: (UUID) -> Void
+    let openLogs: (UUID) -> Void
     let startAll: () -> Void
     let stopAll: () -> Void
 
@@ -15,12 +18,14 @@ struct WorkspaceCardView: View {
         states: [UUID: ServiceState],
         initiallyExpanded: Bool,
         toggleService: @escaping (UUID) -> Void,
+        openLogs: @escaping (UUID) -> Void,
         startAll: @escaping () -> Void,
         stopAll: @escaping () -> Void
     ) {
         self.workspace = workspace
         self.states = states
         self.toggleService = toggleService
+        self.openLogs = openLogs
         self.startAll = startAll
         self.stopAll = stopAll
         _isExpanded = State(initialValue: initiallyExpanded)
@@ -39,27 +44,27 @@ struct WorkspaceCardView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 Button {
                     withAnimation(.snappy(duration: 0.22)) { isExpanded.toggle() }
                 } label: {
-                    HStack(spacing: 12) {
+                    HStack(spacing: 10) {
                         Text(String(workspace.name.prefix(1)).uppercased())
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(.white)
-                            .frame(width: 42, height: 42)
+                            .frame(width: 38, height: 38)
                             .background(
                                 LinearGradient(
                                     colors: [Color(devBarHex: workspace.tintHex), DevBarTheme.accentEnd],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 ),
-                                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
                             )
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text(workspace.name)
-                                .font(.system(size: 16, weight: .bold))
+                                .font(.system(size: 15, weight: .bold))
                                 .foregroundStyle(DevBarTheme.textPrimary)
                             Text("\(workspace.services.count) 个服务 · \(allStopped ? "全部已停止" : "\(activeCount) 个运行中")")
                                 .font(.system(size: 11))
@@ -69,7 +74,7 @@ struct WorkspaceCardView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(DevBarPressButtonStyle())
 
                 if isExpanded {
                     Button(allStopped ? "启动全部" : "停止全部") {
@@ -81,7 +86,7 @@ struct WorkspaceCardView: View {
                     .frame(height: 34)
                     .background(allStopped ? AnyShapeStyle(DevBarTheme.accent) : AnyShapeStyle(Color.red.opacity(0.86)))
                     .clipShape(RoundedRectangle(cornerRadius: DevBarTheme.controlRadius, style: .continuous))
-                    .buttonStyle(.plain)
+                    .buttonStyle(DevBarPressButtonStyle())
                     .accessibilityIdentifier("workspace.startAll.\(workspace.id.uuidString)")
                 } else {
                     Image(systemName: "chevron.right")
@@ -90,7 +95,7 @@ struct WorkspaceCardView: View {
                         .frame(width: 34, height: 34)
                 }
             }
-            .padding(18)
+            .padding(16)
 
             if isExpanded {
                 Divider()
@@ -102,6 +107,7 @@ struct WorkspaceCardView: View {
                         ServiceRowView(
                             service: service,
                             state: states[service.id] ?? .stopped,
+                            openLogs: { openLogs(service.id) },
                             toggle: { toggleService(service.id) }
                         )
                         if index < workspace.services.count - 1 {
@@ -111,15 +117,16 @@ struct WorkspaceCardView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 18)
+                .padding(.horizontal, 16)
             }
         }
         .background(DevBarTheme.surface, in: RoundedRectangle(cornerRadius: DevBarTheme.majorRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: DevBarTheme.majorRadius, style: .continuous)
-                .stroke(DevBarTheme.separator.opacity(0.72), lineWidth: 1)
+                .stroke(DevBarTheme.separator.opacity(0.48), lineWidth: 0.75)
         )
-        .shadow(color: DevBarTheme.surfaceShadow, radius: 14, y: 7)
+        .shadow(color: DevBarTheme.surfaceShadow.opacity(0.72), radius: 16, y: 7)
+        .animation(reduceMotion ? nil : DevBarTheme.stateAnimation, value: activeCount)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("workspace.\(workspace.id.uuidString)")
     }

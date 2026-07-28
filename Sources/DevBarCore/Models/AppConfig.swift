@@ -194,7 +194,10 @@ public enum HealthCheckConfig: Codable, Equatable, Sendable {
 }
 
 public struct PreferencesConfig: Codable, Equatable, Sendable {
+    public static let defaultLogDirectory = "/tmp/DevBar/Logs"
+
     public var shellPath: String
+    public var logDirectory: String
     public var logFileSizeMiB: Int
     public var logFileCount: Int
     public var sigintGraceSeconds: Int
@@ -202,12 +205,14 @@ public struct PreferencesConfig: Codable, Equatable, Sendable {
 
     public init(
         shellPath: String,
+        logDirectory: String = PreferencesConfig.defaultLogDirectory,
         logFileSizeMiB: Int,
         logFileCount: Int,
         sigintGraceSeconds: Int,
         sigtermGraceSeconds: Int
     ) {
         self.shellPath = shellPath
+        self.logDirectory = logDirectory
         self.logFileSizeMiB = logFileSizeMiB
         self.logFileCount = logFileCount
         self.sigintGraceSeconds = sigintGraceSeconds
@@ -216,9 +221,30 @@ public struct PreferencesConfig: Codable, Equatable, Sendable {
 
     public static let `default` = PreferencesConfig(
         shellPath: "",
+        logDirectory: defaultLogDirectory,
         logFileSizeMiB: 5,
         logFileCount: 3,
         sigintGraceSeconds: 8,
         sigtermGraceSeconds: 3
     )
+
+    private enum CodingKeys: String, CodingKey {
+        case shellPath
+        case logDirectory
+        case logFileSizeMiB
+        case logFileCount
+        case sigintGraceSeconds
+        case sigtermGraceSeconds
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        shellPath = try container.decode(String.self, forKey: .shellPath)
+        logDirectory = try container.decodeIfPresent(String.self, forKey: .logDirectory)
+            ?? Self.defaultLogDirectory
+        logFileSizeMiB = try container.decode(Int.self, forKey: .logFileSizeMiB)
+        logFileCount = try container.decode(Int.self, forKey: .logFileCount)
+        sigintGraceSeconds = try container.decode(Int.self, forKey: .sigintGraceSeconds)
+        sigtermGraceSeconds = try container.decode(Int.self, forKey: .sigtermGraceSeconds)
+    }
 }

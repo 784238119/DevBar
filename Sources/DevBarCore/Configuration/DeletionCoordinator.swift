@@ -80,10 +80,11 @@ public actor DeletionCoordinator {
         from originalConfiguration: AppConfig
     ) async throws -> ConfigurationDeletionResult {
         let proposedConfiguration = try removing(target, from: originalConfiguration)
-        let logTarget = try resolveLogTarget(for: target)
+        let logsRootURL = paths.logsRootURL(for: originalConfiguration.preferences)
+        let logTarget = try resolveLogTarget(for: target, logsRootURL: logsRootURL)
 
         let logsRecovery: DeletedLogsRecovery
-        switch try inspectLogTarget(logTarget, for: target) {
+        switch try inspectLogTarget(logTarget, for: target, logsRootURL: logsRootURL) {
         case .missing:
             logsRecovery = .noLogDirectoryExisted
         case .directory:
@@ -130,7 +131,10 @@ public actor DeletionCoordinator {
         var movedItemCount = 0
         for target in targets {
             do {
-                if try await trashLogs(for: target) == .recoverableFromTrash {
+                if try await trashLogs(
+                    for: target,
+                    logsRootURL: paths.logsRootURL(for: originalConfiguration.preferences)
+                ) == .recoverableFromTrash {
                     movedItemCount += 1
                 }
             } catch let error as DeletionCoordinatorError {
@@ -155,10 +159,12 @@ public actor DeletionCoordinator {
     /// window, where deleting history must not delete the service configuration.
     @discardableResult
     public func trashLogs(
-        for target: ConfigurationDeletionTarget
+        for target: ConfigurationDeletionTarget,
+        logsRootURL: URL? = nil
     ) async throws -> DeletedLogsRecovery {
-        let logTarget = try resolveLogTarget(for: target)
-        switch try inspectLogTarget(logTarget, for: target) {
+        let root = (logsRootURL ?? paths.logsRootURL).standardizedFileURL
+        let logTarget = try resolveLogTarget(for: target, logsRootURL: root)
+        switch try inspectLogTarget(logTarget, for: target, logsRootURL: root) {
         case .missing:
             return .noLogDirectoryExisted
         case .directory:
@@ -220,8 +226,11 @@ public actor DeletionCoordinator {
         return targets
     }
 
-    private func resolveLogTarget(for target: ConfigurationDeletionTarget) throws -> URL {
-        let root = paths.logsRootURL.standardizedFileURL
+    private func resolveLogTarget(
+        for target: ConfigurationDeletionTarget,
+        logsRootURL: URL
+    ) throws -> URL {
+        let root = logsRootURL.standardizedFileURL
         let resolved: URL
         switch target {
         case let .workspace(workspaceID):
@@ -252,9 +261,10 @@ public actor DeletionCoordinator {
 
     private func inspectLogTarget(
         _ target: URL,
-        for deletionTarget: ConfigurationDeletionTarget
+        for deletionTarget: ConfigurationDeletionTarget,
+        logsRootURL: URL
     ) throws -> LogTargetInspection {
-        let root = paths.logsRootURL.standardizedFileURL
+        let root = logsRootURL.standardizedFileURL
         switch node(at: root) {
         case .missing:
             return .missing

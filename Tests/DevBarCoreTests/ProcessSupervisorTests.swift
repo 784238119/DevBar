@@ -211,7 +211,13 @@ final class ProcessSupervisorTests: XCTestCase {
         )
 
         let configurations = await logger.configurations
-        XCTAssertEqual(configurations, [.init(logFileSizeMiB: 17, fileCount: 6)])
+        XCTAssertEqual(configurations, [
+            .init(
+                logDirectory: PreferencesConfig.defaultLogDirectory,
+                logFileSizeMiB: 17,
+                fileCount: 6
+            )
+        ])
     }
 
     func testRuntimeOutputCarriesStableOwnershipAndRoutesToLogStore() async {
@@ -397,6 +403,7 @@ private actor FakeRunner: RunnerControlling {
 
 private actor FakeLogStore: ServiceLogStoring {
     struct Configuration: Equatable, Sendable {
+        let logDirectory: String
         let logFileSizeMiB: Int
         let fileCount: Int
     }
@@ -417,8 +424,14 @@ private actor FakeLogStore: ServiceLogStoring {
         self.prepareError = prepareError
     }
 
-    func configure(logFileSizeMiB: Int, fileCount: Int) async throws {
-        configurations.append(.init(logFileSizeMiB: logFileSizeMiB, fileCount: fileCount))
+    func configure(logDirectory: String, logFileSizeMiB: Int, fileCount: Int) async throws {
+        configurations.append(
+            .init(
+                logDirectory: logDirectory,
+                logFileSizeMiB: logFileSizeMiB,
+                fileCount: fileCount
+            )
+        )
     }
 
     func prepare(workspaceID: UUID, serviceID: UUID) async throws {

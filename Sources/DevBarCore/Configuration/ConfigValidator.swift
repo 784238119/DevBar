@@ -38,14 +38,24 @@ public struct ConfigValidator {
         "cube.fill"
     ]
 
-    public static let allowedTintHexes: Set<String> = [
+    public static let selectableTintHexes: [String] = [
+        "#2B7FFF",
+        "#37A4FF",
+        "#31C4B1",
+        "#4F7CF7",
+        "#7B72F2",
+        "#6B7785"
+    ]
+
+    public static let allowedTintHexes: Set<String> = Set(selectableTintHexes + [
+        // Keep existing configurations valid after the visual palette changed.
         "#FF7A59",
         "#FF5C8A",
         "#A78BFA",
         "#F59E0B",
         "#34C759",
         "#0EA5E9"
-    ]
+    ])
 
     private let fileManager: FileManager
 
@@ -55,17 +65,18 @@ public struct ConfigValidator {
 
     public func validate(_ config: AppConfig) -> [ValidationIssue] {
         var issues: [ValidationIssue] = []
-        validatePreferences(config.preferences, issues: &issues)
+        issues.append(contentsOf: validatePreferences(config.preferences))
 
         for (workspaceIndex, workspace) in config.workspaces.enumerated() {
             let workspacePath = "workspaces[\(workspaceIndex)]"
-            validateWorkspace(workspace, at: workspacePath, issues: &issues)
+            issues.append(contentsOf: validateWorkspace(workspace, at: workspacePath))
         }
 
         return issues
     }
 
-    private func validatePreferences(_ preferences: PreferencesConfig, issues: inout [ValidationIssue]) {
+    public func validatePreferences(_ preferences: PreferencesConfig) -> [ValidationIssue] {
+        var issues: [ValidationIssue] = []
         if !preferences.shellPath.isEmpty, !isExecutableRegularFile(at: preferences.shellPath) {
             issues.append(.init(
                 path: "preferences.shellPath",
@@ -73,13 +84,25 @@ public struct ConfigValidator {
                 message: "The selected zsh path must be an executable file."
             ))
         }
+        if !isValidLogDirectory(preferences.logDirectory) {
+            issues.append(.init(
+                path: "preferences.logDirectory",
+                code: .invalidPreferenceRange,
+                message: "日志目录必须是规范化的绝对路径；已有路径必须是非符号链接目录。"
+            ))
+        }
         validateRange(preferences.logFileSizeMiB, range: 1...100, path: "preferences.logFileSizeMiB", label: "Log file size", issues: &issues)
         validateRange(preferences.logFileCount, range: 1...10, path: "preferences.logFileCount", label: "Log file count", issues: &issues)
         validateRange(preferences.sigintGraceSeconds, range: 1...60, path: "preferences.sigintGraceSeconds", label: "SIGINT grace period", issues: &issues)
         validateRange(preferences.sigtermGraceSeconds, range: 1...30, path: "preferences.sigtermGraceSeconds", label: "SIGTERM grace period", issues: &issues)
+        return issues
     }
 
-    private func validateWorkspace(_ workspace: WorkspaceConfig, at path: String, issues: inout [ValidationIssue]) {
+    public func validateWorkspace(
+        _ workspace: WorkspaceConfig,
+        at path: String = "workspace"
+    ) -> [ValidationIssue] {
+        var issues: [ValidationIssue] = []
         if workspace.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             issues.append(.init(path: "\(path).name", code: .emptyWorkspaceName, message: "Workspace name is required."))
         }
@@ -98,6 +121,7 @@ public struct ConfigValidator {
         for (serviceIndex, service) in workspace.services.enumerated() {
             validateService(service, workspaceRoot: workspace.rootDirectory, at: "\(path).services[\(serviceIndex)]", issues: &issues)
         }
+        return issues
     }
 
     private func validateService(_ service: ServiceConfig, workspaceRoot: String, at path: String, issues: inout [ValidationIssue]) {
@@ -119,11 +143,11 @@ public struct ConfigValidator {
         for (index, entry) in entries.enumerated() {
             let keyPath = "\(path)[\(index)].key"
             guard isValidEnvironmentKey(entry.key) else {
-                issues.append(.init(path: keyPath, code: .invalidEnvironmentKey, message: "Environment names must match [A-Za-z_][A-Za-z0-9_]*."))
+                issues.append(.init(path: keyPath, code: .invalidEnvironmentKey, message: "变量名只能包含字母、数字和下划线，且不能以数字开头。"))
                 continue
             }
             if !seenValidKeys.insert(entry.key).inserted {
-                issues.append(.init(path: keyPath, code: .duplicateEnvironmentKey, message: "Environment variable names must be unique within this scope."))
+                issues.append(.init(path: keyPath, code: .duplicateEnvironmentKey, message: "变量名不能重复。"))
             }
         }
     }
@@ -177,6 +201,17 @@ public struct ConfigValidator {
     private func isExecutableRegularFile(at path: String) -> Bool {
         guard !isDirectory(at: path) else { return false }
         return fileManager.isExecutableFile(atPath: path)
+    }
+
+    private func isValidLogDirectory(_ path: String) -> Bool {
+        guard path.hasPrefix("/"), path != "/" else { return false }
+        let url = URL(fileURLWithPath: path, isDirectory: true)
+        guard url.standardizedFileURL.path == path else { return false }
+        guard fileManager.fileExists(atPath: path) else { return true }
+        guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]) else {
+            return false
+        }
+        return values.isDirectory == true && values.isSymbolicLink != true
     }
 
     private func isDirectory(at path: String) -> Bool {

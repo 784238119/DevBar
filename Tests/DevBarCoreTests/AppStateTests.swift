@@ -86,6 +86,79 @@ final class AppStateTests: XCTestCase {
         XCTAssertEqual(savedConfigurations, [repaired])
     }
 
+    func testConfigurationEventsAreSerializedAndAppliedToLatestSnapshot() async throws {
+        let originalWorkspace = workspace()
+        let store = FakeConfigurationStore(result: .success(config(workspaces: [originalWorkspace])))
+        let appState = makeAppState(configuration: store)
+        let gate = ConfigurationEventGate()
+        appState.start()
+        try await waitUntil { appState.isConfigurationReady && appState.isShellEnvironmentReady }
+
+        var renamedWorkspace = originalWorkspace
+        renamedWorkspace.name = "Renamed"
+        let first = Task {
+            try await appState.applyConfigurationEvent(.upsertWorkspace(renamedWorkspace)) { _, _ in
+                await gate.wait()
+            }
+        }
+        await gate.waitUntilEntered()
+
+        var preferences = PreferencesConfig.default
+        preferences.logFileCount = 7
+        let second = Task {
+            try await appState.applyConfigurationEvent(.updatePreferences(preferences))
+        }
+        await Task.yield()
+        let savesWhileBlocked = await store.savedConfigurations()
+        XCTAssertTrue(savesWhileBlocked.isEmpty)
+
+        await gate.release()
+        _ = try await first.value
+        _ = try await second.value
+
+        let saves = await store.savedConfigurations()
+        XCTAssertEqual(saves.count, 2)
+        XCTAssertEqual(saves[0].workspaces[0].name, "Renamed")
+        XCTAssertEqual(saves[1].workspaces[0].name, "Renamed")
+        XCTAssertEqual(saves[1].preferences.logFileCount, 7)
+    }
+
+    func testStartWaitingOnFailedConfigurationEventIsCancelled() async throws {
+        let configuredWorkspace = workspace()
+        let supervisor = FakeSupervisor()
+        let appState = makeAppState(
+            configuration: .init(result: .success(config(workspaces: [configuredWorkspace]))),
+            supervisor: supervisor
+        )
+        let gate = ConfigurationEventGate()
+        appState.start()
+        try await waitUntil { appState.isConfigurationReady && appState.isShellEnvironmentReady }
+
+        var renamedWorkspace = configuredWorkspace
+        renamedWorkspace.name = "Will fail"
+        let event = Task {
+            try await appState.applyConfigurationEvent(.upsertWorkspace(renamedWorkspace)) { _, _ in
+                await gate.wait()
+                throw FakeError.configuration
+            }
+        }
+        await gate.waitUntilEntered()
+        let start = Task {
+            await appState.startAll(workspaceID: configuredWorkspace.id)
+        }
+        await Task.yield()
+        let startsWhileBlocked = await supervisor.startedWorkspaceIDs()
+        XCTAssertTrue(startsWhileBlocked.isEmpty)
+
+        await gate.release()
+        _ = try? await event.value
+        await start.value
+
+        let startsAfterFailure = await supervisor.startedWorkspaceIDs()
+        XCTAssertTrue(startsAfterFailure.isEmpty)
+        XCTAssertEqual(appState.config.workspaces[0].name, configuredWorkspace.name)
+    }
+
     func testSuccessfulBackupRecoveryIsVisibleWithoutBlockingServiceConfiguration() async throws {
         let recovered = config(workspaces: [])
         let diagnosticStore = DiagnosticConfigurationStore(
@@ -293,6 +366,33 @@ private enum FakeError: Error, LocalizedError {
         case .shell: "Shell refresh failed."
         case .timeout: "Timed out waiting for app state."
         }
+    }
+}
+
+private actor ConfigurationEventGate {
+    private var entered = false
+    private var enteredWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        entered = true
+        enteredWaiters.forEach { $0.resume() }
+        enteredWaiters.removeAll()
+        await withCheckedContinuation { continuation in
+            releaseWaiters.append(continuation)
+        }
+    }
+
+    func waitUntilEntered() async {
+        if entered { return }
+        await withCheckedContinuation { continuation in
+            enteredWaiters.append(continuation)
+        }
+    }
+
+    func release() {
+        releaseWaiters.forEach { $0.resume() }
+        releaseWaiters.removeAll()
     }
 }
 

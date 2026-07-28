@@ -64,13 +64,18 @@ struct AppDependencies {
             workspaceLocked: { [appState] workspaceID in
                 appState.isEditingLocked(workspaceID: workspaceID)
             },
-            commit: { [appState, deletionCoordinator] baseline, draft in
-                let movedLogFolders = try await deletionCoordinator.prepareConfigurationChanges(
-                    from: baseline,
-                    to: draft
-                )
+            logDirectoryLocked: { [appState] in
+                appState.hasActiveServices
+            },
+            commit: { [appState, deletionCoordinator] event in
+                var movedLogFolders = 0
                 do {
-                    try await appState.saveOrThrow(draft)
+                    return try await appState.applyConfigurationEvent(event) { baseline, draft in
+                        movedLogFolders = try await deletionCoordinator.prepareConfigurationChanges(
+                            from: baseline,
+                            to: draft
+                        )
+                    }
                 } catch {
                     if movedLogFolders > 0 {
                         throw SettingsCommitError.configurationSaveFailedAfterTrash(
@@ -96,18 +101,19 @@ struct AppDependencies {
             services: LogServiceDescriptor.all(in: appState.config),
             selectedServiceID: selectedServiceID,
             store: logStore,
-            openDirectory: { [paths] service in
-                let directory = paths.logsRootURL
+            openDirectory: { [appState, paths] service in
+                let directory = paths.logsRootURL(for: appState.config.preferences)
                     .appendingPathComponent(service.workspaceID.uuidString.lowercased(), isDirectory: true)
                     .appendingPathComponent(service.serviceID.uuidString.lowercased(), isDirectory: true)
                 NSWorkspace.shared.activateFileViewerSelecting([directory])
             },
-            deleteHistory: { [appState, deletionCoordinator, logStore] service in
+            deleteHistory: { [appState, deletionCoordinator, logStore, paths] service in
                 guard !Self.isActive(appState.serviceStates[service.serviceID] ?? .stopped) else {
                     throw LogHistoryActionError.serviceIsRunning
                 }
                 _ = try await deletionCoordinator.trashLogs(
-                    for: .service(workspaceID: service.workspaceID, serviceID: service.serviceID)
+                    for: .service(workspaceID: service.workspaceID, serviceID: service.serviceID),
+                    logsRootURL: paths.logsRootURL(for: appState.config.preferences)
                 )
                 await logStore.forgetHistory(serviceID: service.serviceID)
             }

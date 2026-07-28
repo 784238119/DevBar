@@ -14,11 +14,17 @@ final class MainWindowCoordinatorTests: XCTestCase {
 
     func testOpenActivatesApplicationBeforePresentingMainWindow() {
         var events: [String] = []
-        let coordinator = MainWindowCoordinator { events.append("activate") }
+        let coordinator = MainWindowCoordinator(
+            activateApplication: { events.append("activate") },
+            setActivationPolicy: {
+                events.append($0 == .regular ? "regular" : "other")
+                return true
+            }
+        )
         coordinator.register { events.append("open") }
 
         XCTAssertTrue(coordinator.openMainWindow())
-        XCTAssertEqual(events, ["activate", "open"])
+        XCTAssertEqual(events, ["regular", "activate", "open"])
     }
 
     func testReplacingRegistrationUsesOnlyLatestPresentationAction() {
@@ -29,6 +35,36 @@ final class MainWindowCoordinatorTests: XCTestCase {
 
         XCTAssertTrue(coordinator.openMainWindow())
         XCTAssertEqual(events, ["new"])
+    }
+
+    func testClosingLastVisibleWindowSwitchesToAccessoryMode() {
+        var policies: [NSApplication.ActivationPolicy] = []
+        let coordinator = MainWindowCoordinator(
+            activateApplication: {},
+            setActivationPolicy: {
+                policies.append($0)
+                return true
+            }
+        )
+
+        coordinator.hideDockIconIfNoVisibleWindows(false)
+
+        XCTAssertEqual(policies, [.accessory])
+    }
+
+    func testClosingOneWindowKeepsDockWhileAnotherWindowIsVisible() {
+        var policies: [NSApplication.ActivationPolicy] = []
+        let coordinator = MainWindowCoordinator(
+            activateApplication: {},
+            setActivationPolicy: {
+                policies.append($0)
+                return true
+            }
+        )
+
+        coordinator.hideDockIconIfNoVisibleWindows(true)
+
+        XCTAssertTrue(policies.isEmpty)
     }
 
     func testDockReopenRoutesToMainWindowCoordinator() {

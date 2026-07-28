@@ -5,7 +5,10 @@ import SwiftUI
 @main
 enum DevBarLauncher {
     static func main() {
-        if ProcessInfo.processInfo.arguments.contains("--ui-testing") {
+        let processInfo = ProcessInfo.processInfo
+        let hasUITestEnvironment = processInfo.environment["DEVBAR_TEST_ROOT"] != nil
+            && processInfo.environment["DEVBAR_TEST_CONFIG"] != nil
+        if processInfo.arguments.contains("--ui-testing") || hasUITestEnvironment {
             UITestDevBarApp.main()
         } else {
             ProductionDevBarApp.main()
@@ -16,6 +19,8 @@ enum DevBarLauncher {
 @MainActor
 private struct ProductionDevBarApp: App {
     @NSApplicationDelegateAdaptor(DevBarApplicationDelegate.self) private var applicationDelegate
+    @State private var presentationPreferences: AppPresentationPreferences
+    @State private var selectedLogServiceID: UUID?
     private let dependencies: AppDependencies
     private var mainWindowCoordinator: MainWindowCoordinator {
         applicationDelegate.mainWindowCoordinator
@@ -23,23 +28,36 @@ private struct ProductionDevBarApp: App {
 
     init() {
         let dependencies = AppDependencies.live()
+        let presentationPreferences = AppPresentationPreferences(defaults: .standard)
         self.dependencies = dependencies
-        applicationDelegate.configure(appState: dependencies.appState)
+        _presentationPreferences = State(
+            initialValue: presentationPreferences
+        )
+        applicationDelegate.configure(
+            appState: dependencies.appState,
+            presentationPreferences: presentationPreferences
+        )
     }
 
     var body: some Scene {
         Window("DevBar", id: "main") {
-            SettingsSceneContent(dependencies: dependencies)
+            SettingsSceneContent(
+                dependencies: dependencies,
+                presentationPreferences: presentationPreferences
+            )
         }
         .defaultSize(width: 980, height: 680)
+        .windowStyle(.hiddenTitleBar)
         .commands {
             MainWindowCommands(coordinator: mainWindowCoordinator)
         }
 
-        MenuBarExtra {
+        MenuBarExtra(isInserted: menuBarIconBinding) {
             ProductionMenuContent(
                 dependencies: dependencies,
-                mainWindowCoordinator: mainWindowCoordinator
+                presentationPreferences: presentationPreferences,
+                mainWindowCoordinator: mainWindowCoordinator,
+                selectedLogServiceID: $selectedLogServiceID
             )
         } label: {
             ProductionStatusItem(
@@ -50,16 +68,29 @@ private struct ProductionDevBarApp: App {
         .menuBarExtraStyle(.window)
 
         Window("服务日志", id: "logs") {
-            LogSceneContent(dependencies: dependencies)
+            LogSceneContent(
+                dependencies: dependencies,
+                presentationPreferences: presentationPreferences,
+                selectedServiceID: selectedLogServiceID
+            )
         }
         .defaultSize(width: 900, height: 600)
+    }
+
+    private var menuBarIconBinding: Binding<Bool> {
+        Binding(
+            get: { presentationPreferences.showsMenuBarIcon },
+            set: { presentationPreferences.showsMenuBarIcon = $0 }
+        )
     }
 }
 
 @MainActor
 private struct ProductionMenuContent: View {
     let dependencies: AppDependencies
+    let presentationPreferences: AppPresentationPreferences
     let mainWindowCoordinator: MainWindowCoordinator
+    @Binding var selectedLogServiceID: UUID?
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -68,12 +99,13 @@ private struct ProductionMenuContent: View {
             openSettings: {
                 mainWindowCoordinator.openMainWindow()
             },
-            openLogs: {
+            openLogs: { serviceID in
+                selectedLogServiceID = serviceID
                 NSApp.activate(ignoringOtherApps: true)
                 openWindow(id: "logs")
-            },
-            quit: { NSApp.terminate(nil) }
+            }
         )
+        .devBarAppearance(presentationPreferences.appearance)
     }
 }
 
@@ -84,7 +116,7 @@ private struct ProductionStatusItem: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        Image(systemName: statusSymbol)
+        Image(systemName: statusItemSymbol(for: appState.aggregateStatus))
             .accessibilityLabel("DevBar")
             .task {
                 mainWindowCoordinator.register {
@@ -93,13 +125,14 @@ private struct ProductionStatusItem: View {
             }
     }
 
-    private var statusSymbol: String {
-        switch appState.aggregateStatus {
-        case .neutral: "terminal"
-        case .working: "terminal.fill"
-        case .ready: "checkmark.circle.fill"
-        case .error: "exclamationmark.triangle.fill"
-        }
+}
+
+func statusItemSymbol(for status: AppAggregateStatus) -> String {
+    switch status {
+    case .neutral: "hammer"
+    case .working: "hammer.fill"
+    case .ready: "checkmark.circle.fill"
+    case .error: "exclamationmark.triangle.fill"
     }
 }
 
@@ -120,20 +153,27 @@ private struct MainWindowCommands: Commands {
 @MainActor
 private struct SettingsSceneContent: View {
     let dependencies: AppDependencies
+    let presentationPreferences: AppPresentationPreferences
     @State private var viewModel: SettingsViewModel?
-    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         Group {
             if let viewModel {
-                SettingsRootView(viewModel: viewModel, close: { dismiss() })
+                SettingsRootView(
+                    viewModel: viewModel,
+                    presentationPreferences: presentationPreferences
+                )
             } else {
                 ProgressView("正在加载配置…")
                     .frame(width: 980, height: 680)
                     .background(DevBarTheme.background)
             }
         }
+        .devBarAppearance(presentationPreferences.appearance)
         .task { await prepareViewModel() }
+        .onChange(of: dependencies.appState.config) { _, configuration in
+            viewModel?.synchronize(with: configuration)
+        }
         .onAppear {
             guard dependencies.appState.isConfigurationReady else { return }
             viewModel = dependencies.makeSettingsViewModel()
@@ -154,6 +194,8 @@ private struct SettingsSceneContent: View {
 @MainActor
 private struct LogSceneContent: View {
     let dependencies: AppDependencies
+    let presentationPreferences: AppPresentationPreferences
+    let selectedServiceID: UUID?
     @State private var viewModel: LogViewModel?
 
     var body: some View {
@@ -166,18 +208,23 @@ private struct LogSceneContent: View {
                     .background(DevBarTheme.background)
             }
         }
+        .devBarAppearance(presentationPreferences.appearance)
         .task {
             while !dependencies.appState.isConfigurationReady {
                 guard !Task.isCancelled else { return }
                 try? await Task.sleep(for: .milliseconds(20))
             }
             if viewModel == nil {
-                viewModel = dependencies.makeLogViewModel()
+                viewModel = dependencies.makeLogViewModel(selectedServiceID: selectedServiceID)
             }
         }
         .onAppear {
             guard dependencies.appState.isConfigurationReady else { return }
-            viewModel = dependencies.makeLogViewModel()
+            viewModel = dependencies.makeLogViewModel(selectedServiceID: selectedServiceID)
+        }
+        .onChange(of: selectedServiceID) { _, serviceID in
+            guard dependencies.appState.isConfigurationReady else { return }
+            viewModel = dependencies.makeLogViewModel(selectedServiceID: serviceID)
         }
     }
 }
@@ -185,6 +232,7 @@ private struct LogSceneContent: View {
 @MainActor
 private struct UITestDevBarApp: App {
     private let dependencies: AppDependencies
+    private let presentationPreferences: AppPresentationPreferences
 
     init() {
         let environment = ProcessInfo.processInfo.environment
@@ -203,6 +251,10 @@ private struct UITestDevBarApp: App {
                 configuration: configuration,
                 applicationSupportRoot: URL(fileURLWithPath: rootPath, isDirectory: true)
             )
+            let suiteName = "com.calo.DevBar.UITesting.\(ProcessInfo.processInfo.processIdentifier)"
+            let defaults = UserDefaults(suiteName: suiteName)!
+            defaults.removePersistentDomain(forName: suiteName)
+            presentationPreferences = AppPresentationPreferences(defaults: defaults)
         } catch {
             fatalError("Could not load DEVBAR_TEST_CONFIG: \(error.localizedDescription)")
         }
@@ -210,7 +262,10 @@ private struct UITestDevBarApp: App {
 
     var body: some Scene {
         WindowGroup("DevBar") {
-            UITestHost(dependencies: dependencies)
+            UITestHost(
+                dependencies: dependencies,
+                presentationPreferences: presentationPreferences
+            )
         }
         .windowResizability(.contentSize)
     }
@@ -219,19 +274,22 @@ private struct UITestDevBarApp: App {
 @MainActor
 private struct UITestHost: View {
     let dependencies: AppDependencies
+    let presentationPreferences: AppPresentationPreferences
     @State private var showSettings = false
     @State private var showLogs = false
+    @State private var selectedLogServiceID: UUID?
     @State private var didHandleFirstLaunch = false
 
     var body: some View {
         MenuBarPanel(
             appState: dependencies.appState,
             openSettings: { openSettings() },
-            openLogs: {
+            openLogs: { serviceID in
+                selectedLogServiceID = serviceID
                 showLogs = true
-            },
-            quit: {}
+            }
         )
+        .devBarAppearance(presentationPreferences.appearance)
         .task {
             while !dependencies.appState.isConfigurationReady {
                 guard !Task.isCancelled else { return }
@@ -242,14 +300,27 @@ private struct UITestHost: View {
             openSettings()
         }
         .sheet(isPresented: $showSettings) {
-            SettingsSceneContent(dependencies: dependencies)
+            SettingsSceneContent(
+                dependencies: dependencies,
+                presentationPreferences: presentationPreferences
+            )
         }
         .sheet(isPresented: $showLogs) {
-            LogSceneContent(dependencies: dependencies)
+            LogSceneContent(
+                dependencies: dependencies,
+                presentationPreferences: presentationPreferences,
+                selectedServiceID: selectedLogServiceID
+            )
         }
     }
 
     private func openSettings() {
         showSettings = true
+    }
+}
+
+private extension View {
+    func devBarAppearance(_ appearance: AppAppearance) -> some View {
+        preferredColorScheme(appearance.preferredColorScheme)
     }
 }

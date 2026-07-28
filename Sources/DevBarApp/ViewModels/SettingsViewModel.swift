@@ -37,10 +37,7 @@ enum SettingsNotice: Equatable {
 @MainActor
 @Observable
 final class SettingsViewModel {
-    /// The commit boundary receives both snapshots so its production adapter can run
-    /// DeletionCoordinator first for removed UUID log directories, then persist config.
-    /// It must throw when either Trash or persistence fails.
-    typealias CommitAction = @MainActor (_ baseline: AppConfig, _ draft: AppConfig) async throws -> Void
+    typealias CommitAction = @MainActor (_ event: ConfigurationEvent) async throws -> AppConfig
     typealias ShellRefreshAction = @MainActor (String) async throws -> Void
     typealias SyntaxCheckAction = @Sendable (String, String) async -> ShellSyntaxResult
 
@@ -60,12 +57,16 @@ final class SettingsViewModel {
     private let shellRefreshAction: ShellRefreshAction
     private let syntaxCheckAction: SyntaxCheckAction
     private let workspaceLocked: @MainActor (UUID) -> Bool
+    private let logDirectoryLocked: @MainActor () -> Bool
+    @ObservationIgnored private var configurationEventGeneration: UInt64 = 0
+    @ObservationIgnored private var pendingConfigurationEventCount = 0
 
     init(
         configuration: AppConfig,
         directoryPicker: (any DirectoryPicking)? = nil,
         validator: ConfigValidator = ConfigValidator(),
         workspaceLocked: @escaping @MainActor (UUID) -> Bool = { _ in false },
+        logDirectoryLocked: @escaping @MainActor () -> Bool = { false },
         commit: @escaping CommitAction,
         refreshShell: @escaping ShellRefreshAction,
         checkSyntax: SyntaxCheckAction? = nil
@@ -76,6 +77,7 @@ final class SettingsViewModel {
         self.directoryPicker = directoryPicker ?? NSOpenPanelDirectoryPicker()
         self.validator = validator
         self.workspaceLocked = workspaceLocked
+        self.logDirectoryLocked = logDirectoryLocked
         commitAction = commit
         shellRefreshAction = refreshShell
         syntaxCheckAction = checkSyntax ?? { zshPath, command in
@@ -84,6 +86,7 @@ final class SettingsViewModel {
     }
 
     var hasUnsavedChanges: Bool { draft != baseline }
+    var isLogDirectoryLocked: Bool { logDirectoryLocked() }
     var selectedWorkspaceIndex: Int? {
         guard let selectedWorkspaceID else { return nil }
         return draft.workspaces.firstIndex { $0.id == selectedWorkspaceID }
@@ -125,7 +128,26 @@ final class SettingsViewModel {
 
     func selectPreferences() {
         showsPreferences = true
-        selectedWorkspaceID = nil
+    }
+
+    func leavePreferences() {
+        if let selectedWorkspaceID,
+           draft.workspaces.contains(where: { $0.id == selectedWorkspaceID }) {
+            showsPreferences = false
+            return
+        }
+        selectedWorkspaceID = draft.workspaces.first?.id
+        showsPreferences = false
+    }
+
+    func synchronize(with configuration: AppConfig) {
+        guard pendingConfigurationEventCount == 0, draft == baseline else { return }
+        let currentSelection = selectedWorkspaceID
+        baseline = configuration
+        draft = configuration
+        selectedWorkspaceID = currentSelection.flatMap { selectedID in
+            configuration.workspaces.contains(where: { $0.id == selectedID }) ? selectedID : nil
+        } ?? configuration.workspaces.first?.id
     }
 
     func addWorkspace() async {
@@ -140,13 +162,13 @@ final class SettingsViewModel {
         )
         draft.workspaces.append(workspace)
         selectWorkspace(workspace.id)
-        revalidate()
+        await commitWorkspace(workspace.id)
     }
 
-    func updateWorkspace(_ workspace: WorkspaceConfig) {
+    func updateWorkspace(_ workspace: WorkspaceConfig) async {
         guard let index = draft.workspaces.firstIndex(where: { $0.id == workspace.id }) else { return }
         draft.workspaces[index] = workspace
-        revalidate()
+        await commitWorkspace(workspace.id)
     }
 
     func chooseWorkspaceRoot(_ workspaceID: UUID) async {
@@ -155,10 +177,20 @@ final class SettingsViewModel {
               let directory = await directoryPicker.chooseDirectory()
         else { return }
         draft.workspaces[index].rootDirectory = directory.standardizedFileURL.path
-        revalidate()
+        await commitWorkspace(workspaceID)
     }
 
-    func deleteWorkspace(_ workspaceID: UUID) {
+    func chooseLogDirectory() async {
+        guard !logDirectoryLocked() else {
+            setNotice(.failure("仍有服务正在运行，请全部停止后再切换日志目录。"))
+            return
+        }
+        guard let directory = await directoryPicker.chooseDirectory() else { return }
+        draft.preferences.logDirectory = directory.standardizedFileURL.path
+        await commitPreferences()
+    }
+
+    func deleteWorkspace(_ workspaceID: UUID) async {
         guard !isLocked(workspaceID),
               let index = draft.workspaces.firstIndex(where: { $0.id == workspaceID })
         else { return }
@@ -166,16 +198,36 @@ final class SettingsViewModel {
         selectedWorkspaceID = draft.workspaces.indices.contains(index)
             ? draft.workspaces[index].id
             : draft.workspaces.last?.id
-        revalidate()
+        await commitEvent(.removeWorkspace(workspaceID), validationIssues: [])
     }
 
-    func moveWorkspaces(fromOffsets: IndexSet, toOffset: Int) {
+    func moveWorkspaces(fromOffsets: IndexSet, toOffset: Int) async {
         draft.workspaces.move(fromOffsets: fromOffsets, toOffset: toOffset)
+        await commitEvent(
+            .reorderWorkspaces(draft.workspaces.map(\.id)),
+            validationIssues: []
+        )
     }
 
-    func moveServices(workspaceID: UUID, fromOffsets: IndexSet, toOffset: Int) {
-        guard let index = draft.workspaces.firstIndex(where: { $0.id == workspaceID }) else { return }
-        draft.workspaces[index].services.move(fromOffsets: fromOffsets, toOffset: toOffset)
+    func moveService(
+        workspaceID: UUID,
+        serviceID: UUID,
+        relativeTo targetServiceID: UUID,
+        placeAfterTarget: Bool
+    ) async {
+        guard serviceID != targetServiceID,
+              let workspaceIndex = draft.workspaces.firstIndex(where: { $0.id == workspaceID }),
+              let sourceIndex = draft.workspaces[workspaceIndex].services.firstIndex(where: { $0.id == serviceID }),
+              let originalTargetIndex = draft.workspaces[workspaceIndex].services.firstIndex(
+                  where: { $0.id == targetServiceID }
+              )
+        else { return }
+
+        let service = draft.workspaces[workspaceIndex].services.remove(at: sourceIndex)
+        let targetIndex = originalTargetIndex - (sourceIndex < originalTargetIndex ? 1 : 0)
+        let insertionIndex = targetIndex + (placeAfterTarget ? 1 : 0)
+        draft.workspaces[workspaceIndex].services.insert(service, at: insertionIndex)
+        await commitWorkspace(workspaceID)
     }
 
     func beginAddingService(workspaceID: UUID) {
@@ -198,42 +250,104 @@ final class SettingsViewModel {
         serviceEditor = ServiceEditorDraft(serviceID: serviceID, service: service)
     }
 
-    func chooseServiceDirectory(workspaceID: UUID) async {
-        guard !isLocked(workspaceID), var editor = serviceEditor,
+    func chooseServiceDirectory(
+        workspaceID: UUID,
+        for service: ServiceConfig
+    ) async -> ServiceConfig {
+        guard !isLocked(workspaceID),
               let root = draft.workspaces.first(where: { $0.id == workspaceID })?.rootDirectory,
               let directory = await directoryPicker.chooseDirectory()
-        else { return }
-        editor.service.workingDirectory = Self.workingDirectory(for: directory, workspaceRoot: root)
-        serviceEditor = editor
+        else { return service }
+        var updated = service
+        updated.workingDirectory = Self.workingDirectory(for: directory, workspaceRoot: root)
+        return updated
     }
 
-    func commitServiceEditor(workspaceID: UUID) {
+    @discardableResult
+    func commitServiceEditor(
+        workspaceID: UUID,
+        draft editor: ServiceEditorDraft
+    ) async -> Bool {
         guard let workspaceIndex = draft.workspaces.firstIndex(where: { $0.id == workspaceID }),
-              let editor = serviceEditor
-        else { return }
-        if let serviceID = editor.serviceID,
-           let serviceIndex = draft.workspaces[workspaceIndex].services.firstIndex(where: { $0.id == serviceID }) {
+              !isLocked(workspaceID)
+        else {
+            setNotice(.failure("服务所属工作区已不存在或正在运行，无法保存。"))
+            return false
+        }
+        if let serviceID = editor.serviceID {
+            guard let serviceIndex = draft.workspaces[workspaceIndex].services.firstIndex(
+                where: { $0.id == serviceID }
+            ) else {
+                setNotice(.failure("原服务已不存在，无法保存本次编辑。"))
+                return false
+            }
             draft.workspaces[workspaceIndex].services[serviceIndex] = editor.service
         } else {
             draft.workspaces[workspaceIndex].services.append(editor.service)
         }
-        revalidate()
+        return await commitWorkspace(workspaceID)
     }
 
-    func deleteService(workspaceID: UUID, serviceID: UUID) {
+    func endServiceEditing() {
+        serviceEditor = nil
+    }
+
+    func deleteService(workspaceID: UUID, serviceID: UUID) async {
         guard !isLocked(workspaceID),
               let workspaceIndex = draft.workspaces.firstIndex(where: { $0.id == workspaceID }),
               let serviceIndex = draft.workspaces[workspaceIndex].services.firstIndex(where: { $0.id == serviceID })
         else { return }
         draft.workspaces[workspaceIndex].services.remove(at: serviceIndex)
-        revalidate()
+        await commitWorkspace(workspaceID)
+    }
+
+    @discardableResult
+    func commitWorkspace(_ workspaceID: UUID) async -> Bool {
+        guard let index = draft.workspaces.firstIndex(where: { $0.id == workspaceID }) else {
+            return false
+        }
+        let workspace = draft.workspaces[index]
+        let workspaceIssues = validator.validateWorkspace(
+            workspace,
+            at: "workspaces[\(index)]"
+        )
+        return await commitEvent(
+            .upsertWorkspace(workspace),
+            validationIssues: workspaceIssues
+        )
+    }
+
+    @discardableResult
+    func commitPreferences() async -> Bool {
+        if draft.preferences.logDirectory != baseline.preferences.logDirectory,
+           logDirectoryLocked() {
+            draft.preferences.logDirectory = baseline.preferences.logDirectory
+            setNotice(.failure("仍有服务正在运行，请全部停止后再切换日志目录。"))
+            return false
+        }
+        return await commitEvent(
+            .updatePreferences(draft.preferences),
+            validationIssues: validator.validatePreferences(draft.preferences)
+        )
+    }
+
+    @discardableResult
+    func commitWorkspaceEnvironment(
+        workspaceID: UUID,
+        entries: [EnvironmentEntry]
+    ) async -> Bool {
+        guard let index = draft.workspaces.firstIndex(where: { $0.id == workspaceID }) else {
+            return false
+        }
+        draft.workspaces[index].environment = entries
+        return await commitWorkspace(workspaceID)
     }
 
     func checkConfiguration() async -> Bool {
-        notice = .checking
+        setNotice(.checking)
         issues = validator.validate(draft)
         guard issues.isEmpty else {
-            notice = .failure("请修正 \(issues.count) 个配置问题。")
+            setNotice(.failure("请修正 \(issues.count) 个配置问题。"))
             return false
         }
 
@@ -247,10 +361,10 @@ final class SettingsViewModel {
             }
         }
         guard issues.isEmpty else {
-            notice = .failure("启动命令未通过 zsh 语法检查。")
+            setNotice(.failure("启动命令未通过 zsh 语法检查。"))
             return false
         }
-        notice = .success("配置检查通过，未启动任何服务。")
+        setNotice(.success("配置检查通过，未启动任何服务。"))
         return true
     }
 
@@ -259,42 +373,78 @@ final class SettingsViewModel {
         do {
             try await shellRefreshAction(path)
             refreshedShellPath = path
-            notice = .success("Shell 环境已刷新。")
+            if await commitPreferences() {
+                setNotice(.success("Shell 环境已刷新并保存。"))
+            }
         } catch {
             refreshedShellPath = nil
-            notice = .failure(error.localizedDescription)
+            setNotice(.failure(error.localizedDescription))
         }
     }
 
-    func save() async {
-        guard !isSaving else { return }
-        if draft.preferences.shellPath != baseline.preferences.shellPath {
-            let expected = draft.preferences.shellPath.isEmpty ? "/bin/zsh" : draft.preferences.shellPath
-            guard refreshedShellPath == expected else {
-                notice = .failure("zsh 路径已改变，请先刷新 Shell 环境。")
-                return
-            }
-        }
-        guard await checkConfiguration() else { return }
-        isSaving = true
-        defer { isSaving = false }
-        do {
-            try await commitAction(baseline, draft)
-            baseline = draft
-            notice = .success("配置已保存。")
-        } catch {
-            notice = .failure(error.localizedDescription)
-        }
-    }
-
-    func cancel() {
+    func discardUnsavedChanges() {
+        let currentSelection = selectedWorkspaceID
         draft = baseline
-        selectedWorkspaceID = draft.workspaces.first?.id
-        showsPreferences = false
+        selectedWorkspaceID = currentSelection.flatMap { selectedID in
+            draft.workspaces.contains(where: { $0.id == selectedID }) ? selectedID : nil
+        } ?? draft.workspaces.first?.id
         serviceEditor = nil
         issues = []
-        notice = nil
+        setNotice(nil)
         refreshedShellPath = nil
+    }
+
+    @discardableResult
+    private func commitEvent(
+        _ event: ConfigurationEvent,
+        validationIssues: [ValidationIssue]
+    ) async -> Bool {
+        issues = validationIssues
+        guard validationIssues.isEmpty else {
+            draft = baseline
+            issues = []
+            normalizeSelection()
+            setNotice(.failure("输入无效，已恢复上次配置。"))
+            return false
+        }
+
+        configurationEventGeneration &+= 1
+        let generation = configurationEventGeneration
+        pendingConfigurationEventCount += 1
+        isSaving = true
+        defer {
+            pendingConfigurationEventCount -= 1
+            isSaving = pendingConfigurationEventCount > 0
+        }
+        do {
+            let committed = try await commitAction(event)
+            baseline = committed
+            if generation == configurationEventGeneration {
+                draft = committed
+            }
+            issues = []
+            normalizeSelection()
+            setNotice(nil)
+            return true
+        } catch {
+            if generation == configurationEventGeneration {
+                draft = baseline
+            }
+            normalizeSelection()
+            setNotice(.failure(error.localizedDescription))
+            return false
+        }
+    }
+
+    private func normalizeSelection() {
+        guard let selectedWorkspaceID,
+              !draft.workspaces.contains(where: { $0.id == selectedWorkspaceID })
+        else { return }
+        self.selectedWorkspaceID = draft.workspaces.first?.id
+    }
+
+    private func setNotice(_ newValue: SettingsNotice?) {
+        notice = newValue
     }
 
     private func revalidate() {

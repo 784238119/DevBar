@@ -81,6 +81,31 @@ final class ConfigValidatorTests: XCTestCase {
         XCTAssertTrue(ConfigValidator(fileManager: .default).validate(validConfig()).isEmpty)
     }
 
+    func testEverySelectableTintIsValid() {
+        for tint in ConfigValidator.selectableTintHexes {
+            var config = validConfig()
+            config.workspaces[0].tintHex = tint
+
+            XCTAssertFalse(
+                ConfigValidator(fileManager: .default)
+                    .validate(config)
+                    .contains(where: { $0.code == .invalidTintHex }),
+                "\(tint) is selectable in the UI and must pass validation"
+            )
+        }
+    }
+
+    func testLegacyTintRemainsValid() {
+        var config = validConfig()
+        config.workspaces[0].tintHex = "#FF7A59"
+
+        XCTAssertFalse(
+            ConfigValidator(fileManager: .default)
+                .validate(config)
+                .contains(where: { $0.code == .invalidTintHex })
+        )
+    }
+
     private func validConfig() -> AppConfig {
         AppConfig(
             workspaces: [

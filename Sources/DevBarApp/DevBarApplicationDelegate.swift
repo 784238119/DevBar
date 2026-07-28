@@ -5,6 +5,7 @@ import DevBarCore
 final class DevBarApplicationDelegate: NSObject, NSApplicationDelegate {
     let mainWindowCoordinator: MainWindowCoordinator
     private weak var appState: AppState?
+    private var presentationPreferences: AppPresentationPreferences?
     private var terminationTask: Task<Void, Never>?
     private var hasApprovedTermination = false
 
@@ -18,8 +19,18 @@ final class DevBarApplicationDelegate: NSObject, NSApplicationDelegate {
         super.init()
     }
 
-    func configure(appState: AppState) {
+    func configure(
+        appState: AppState,
+        presentationPreferences: AppPresentationPreferences
+    ) {
         self.appState = appState
+        self.presentationPreferences = presentationPreferences
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowWillClose(_:)),
+            name: NSWindow.willCloseNotification,
+            object: nil
+        )
     }
 
     func applicationShouldHandleReopen(
@@ -79,5 +90,17 @@ final class DevBarApplicationDelegate: NSObject, NSApplicationDelegate {
         hasApprovedTermination = true
         terminationTask = nil
         sender.reply(toApplicationShouldTerminate: true)
+    }
+
+    @objc private func windowWillClose(_ notification: Notification) {
+        guard presentationPreferences?.showsMenuBarIcon == true,
+              presentationPreferences?.hidesDockIconWhenNoWindows == true else {
+            return
+        }
+        let closingWindow = notification.object as? NSWindow
+        let hasVisibleWindows = NSApp.windows.contains {
+            $0 !== closingWindow && $0.isVisible && $0.canBecomeMain
+        }
+        mainWindowCoordinator.hideDockIconIfNoVisibleWindows(hasVisibleWindows)
     }
 }

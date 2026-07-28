@@ -50,7 +50,8 @@ public actor LogStore {
         let stream: LogStream
     }
 
-    private let paths: AppPaths
+    private var logsRootURL: URL
+    private let defaultLogsRootURL: URL
     private let maximumEntries: Int
     private var maximumFileSizeBytes: Int
     private var fileCount: Int
@@ -71,7 +72,8 @@ public actor LogStore {
         fileCount: Int = 3,
         fileManager: FileManager = .default
     ) {
-        self.paths = paths
+        logsRootURL = paths.logsRootURL
+        defaultLogsRootURL = paths.logsRootURL
         self.maximumEntries = max(1, maximumEntries)
         self.maximumFileSizeBytes = maximumFileSizeBytes
         self.fileCount = fileCount
@@ -81,17 +83,29 @@ public actor LogStore {
     /// Applies the saved rotation policy before a service starts. Writers do not hold
     /// open file descriptors, so dropping the cache safely applies the new policy to
     /// the next append without interrupting existing processes.
-    public func configure(logFileSizeMiB: Int, fileCount: Int) throws {
+    public func configure(logDirectory: String, logFileSizeMiB: Int, fileCount: Int) throws {
         guard (1...100).contains(logFileSizeMiB), (1...10).contains(fileCount) else {
             throw RotatingLogWriterError.invalidConfiguration
         }
+        let configuredRoot = URL(fileURLWithPath: logDirectory, isDirectory: true).standardizedFileURL
+        guard configuredRoot.path == logDirectory, configuredRoot.path != "/" else {
+            throw RotatingLogWriterError.unsafeLogDirectory
+        }
+        let requestedRoot = logDirectory == PreferencesConfig.defaultLogDirectory
+            ? defaultLogsRootURL
+            : configuredRoot
         let maximumFileSizeBytes = logFileSizeMiB * 1_024 * 1_024
-        guard self.maximumFileSizeBytes != maximumFileSizeBytes || self.fileCount != fileCount else {
+        guard self.maximumFileSizeBytes != maximumFileSizeBytes
+                || self.fileCount != fileCount
+                || logsRootURL != requestedRoot else {
             return
         }
+        logsRootURL = requestedRoot
         self.maximumFileSizeBytes = maximumFileSizeBytes
         self.fileCount = fileCount
         writers.removeAll()
+        locations.removeAll()
+        loadedHistory.removeAll()
     }
 
     /// Call this before a Runner is launched. Unlike append failures, initialization
@@ -239,14 +253,14 @@ public actor LogStore {
     }
 
     private func logDirectory(workspaceID: UUID, serviceID: UUID) -> URL {
-        paths.logsRootURL
+        logsRootURL
             .appendingPathComponent(workspaceID.uuidString.lowercased(), isDirectory: true)
             .appendingPathComponent(serviceID.uuidString.lowercased(), isDirectory: true)
             .standardizedFileURL
     }
 
     private func ensureLogRootIsSafe() throws {
-        let root = paths.logsRootURL.standardizedFileURL
+        let root = logsRootURL.standardizedFileURL
         if fileManager.fileExists(atPath: root.path) {
             let values = try root.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
             guard values.isDirectory == true, values.isSymbolicLink != true else {
@@ -259,7 +273,7 @@ public actor LogStore {
     }
 
     private func ensureWorkspaceDirectoryIsSafe(workspaceID: UUID) throws {
-        let workspaceDirectory = paths.logsRootURL
+        let workspaceDirectory = logsRootURL
             .appendingPathComponent(workspaceID.uuidString.lowercased(), isDirectory: true)
             .standardizedFileURL
         if fileManager.fileExists(atPath: workspaceDirectory.path) {

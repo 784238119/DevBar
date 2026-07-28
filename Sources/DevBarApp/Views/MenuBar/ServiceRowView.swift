@@ -2,8 +2,11 @@ import DevBarCore
 import SwiftUI
 
 struct ServiceRowView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let service: ServiceConfig
     let state: ServiceState
+    let openLogs: () -> Void
     let toggle: () -> Void
 
     private var isActive: Bool {
@@ -25,6 +28,25 @@ struct ServiceRowView: View {
         }
     }
 
+    private var isTransitioning: Bool {
+        switch state {
+        case .starting, .stopping: true
+        case .stopped, .running, .ready, .unready, .failed: false
+        }
+    }
+
+    private var stateAnimationKey: String {
+        switch state {
+        case .stopped: "stopped"
+        case .starting: "starting"
+        case .running: "running"
+        case .ready: "ready"
+        case .unready: "unready"
+        case .stopping: "stopping"
+        case .failed: "failed"
+        }
+    }
+
     private var serviceSymbol: String {
         let command = service.command.lowercased()
         if command.contains("java") || command.contains("mvn") || command.contains("gradle") {
@@ -37,12 +59,12 @@ struct ServiceRowView: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             Image(systemName: serviceSymbol)
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(isActive ? DevBarTheme.accentMiddle : Color.green)
-                .frame(width: 38, height: 38)
-                .background(Color.white.opacity(0.76), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                .frame(width: 34, height: 34)
+                .background(DevBarTheme.surfaceStrong, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(service.name)
@@ -58,13 +80,38 @@ struct ServiceRowView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             HStack(spacing: 6) {
-                Circle()
-                    .fill(presentation.color)
-                    .frame(width: 7, height: 7)
+                if isTransitioning {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .tint(presentation.color)
+                        .frame(width: 12, height: 12)
+                        .transition(.scale.combined(with: .opacity))
+                } else {
+                    Circle()
+                        .fill(presentation.color)
+                        .frame(width: 7, height: 7)
+                        .frame(width: 12, height: 12)
+                        .transition(.scale.combined(with: .opacity))
+                }
                 Text(presentation.label)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(DevBarTheme.textSecondary)
+                    .contentTransition(.opacity)
             }
+
+            Button(action: openLogs) {
+                Image(systemName: "doc.text")
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(DevBarPressButtonStyle())
+            .foregroundStyle(DevBarTheme.textSecondary)
+            .background(DevBarTheme.surfaceStrong, in: Circle())
+            .overlay(Circle().stroke(DevBarTheme.separator.opacity(0.9), lineWidth: 1))
+            .help("查看 \(service.name) 日志")
+            .accessibilityLabel("查看 \(service.name) 日志")
+            .accessibilityIdentifier("service.logs.\(service.id.uuidString)")
 
             Button(action: toggle) {
                 Image(systemName: isActive ? "stop.fill" : "play.fill")
@@ -72,13 +119,14 @@ struct ServiceRowView: View {
                     .frame(width: 32, height: 32)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(DevBarPressButtonStyle())
             .foregroundStyle(isActive ? Color.red : DevBarTheme.textSecondary)
-            .background(Color.white.opacity(0.58), in: Circle())
+            .background(DevBarTheme.surfaceStrong, in: Circle())
             .overlay(Circle().stroke(DevBarTheme.separator.opacity(0.9), lineWidth: 1))
             .accessibilityLabel(isActive ? "停止 \(service.name)" : "启动 \(service.name)")
             .accessibilityIdentifier("service.toggle.\(service.id.uuidString)")
         }
-        .padding(.vertical, 16)
+        .padding(.vertical, 11)
+        .animation(reduceMotion ? nil : DevBarTheme.stateAnimation, value: stateAnimationKey)
     }
 }

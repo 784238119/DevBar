@@ -85,6 +85,48 @@ public enum QuitResult: Equatable, Sendable {
     case confirmationRequired([ServiceRuntime])
 }
 
+public enum ConfigurationEvent: Equatable, Sendable {
+    case upsertWorkspace(WorkspaceConfig)
+    case removeWorkspace(UUID)
+    case reorderWorkspaces([UUID])
+    case updatePreferences(PreferencesConfig)
+
+    fileprivate func applying(to current: AppConfig) -> AppConfig? {
+        var next = current
+        switch self {
+        case let .upsertWorkspace(workspace):
+            if let index = next.workspaces.firstIndex(where: { $0.id == workspace.id }) {
+                next.workspaces[index] = workspace
+            } else {
+                next.workspaces.append(workspace)
+            }
+        case let .removeWorkspace(workspaceID):
+            guard next.workspaces.contains(where: { $0.id == workspaceID }) else { return nil }
+            next.workspaces.removeAll { $0.id == workspaceID }
+        case let .reorderWorkspaces(ids):
+            guard ids.count == next.workspaces.count,
+                  Set(ids) == Set(next.workspaces.map(\.id))
+            else { return nil }
+            let byID = Dictionary(uniqueKeysWithValues: next.workspaces.map { ($0.id, $0) })
+            next.workspaces = ids.compactMap { byID[$0] }
+        case let .updatePreferences(preferences):
+            next.preferences = preferences
+        }
+        return next
+    }
+}
+
+public enum ConfigurationEventError: Error, LocalizedError, Sendable {
+    case staleTarget
+
+    public var errorDescription: String? {
+        switch self {
+        case .staleTarget:
+            "配置已发生变化，请重新执行本次操作。"
+        }
+    }
+}
+
 /// Main-actor composition root for app-facing state. Process and storage work remain in
 /// their actors; this object only receives snapshots and translates them into UI decisions.
 @MainActor
@@ -100,6 +142,9 @@ public final class AppState {
     public private(set) var resolvedShellPath: String?
 
     public var isFirstLaunch: Bool { config.workspaces.isEmpty }
+    public var hasActiveServices: Bool {
+        serviceStates.values.contains(where: isActive)
+    }
 
     public var aggregateStatus: AppAggregateStatus {
         if configurationWarning != nil || !logWarnings.isEmpty || serviceStates.values.contains(where: isFailed) {
@@ -125,6 +170,9 @@ public final class AppState {
     @ObservationIgnored nonisolated(unsafe) private var stateSubscriptionTask: Task<Void, Never>?
     @ObservationIgnored nonisolated(unsafe) private var eventSubscriptionTask: Task<Void, Never>?
     @ObservationIgnored nonisolated(unsafe) private var shellRefreshTask: Task<ShellRefreshOutcome, Never>?
+    @ObservationIgnored nonisolated(unsafe) private var configurationEventTail: Task<Void, Never>?
+    private var configurationEventGeneration: UInt64 = 0
+    private var lastFailedConfigurationEventGeneration: UInt64?
     private var shellRefreshPreferenceKey: String?
     private var shellRefreshGeneration: UInt64 = 0
     private var preparedShellPreferenceKey: String?
@@ -156,6 +204,7 @@ public final class AppState {
         stateSubscriptionTask?.cancel()
         eventSubscriptionTask?.cancel()
         shellRefreshTask?.cancel()
+        configurationEventTail?.cancel()
     }
 
     /// Starts the one-time configuration load, shell-cache warmup, and actor streams.
@@ -174,6 +223,9 @@ public final class AppState {
     }
 
     public func startAll(workspaceID: UUID) async {
+        let awaitedGeneration = configurationEventGeneration
+        await configurationEventTail?.value
+        guard lastFailedConfigurationEventGeneration != awaitedGeneration else { return }
         guard canStartServices(),
               let workspace = config.workspaces.first(where: { $0.id == workspaceID })
         else { return }
@@ -182,6 +234,9 @@ public final class AppState {
     }
 
     public func start(serviceID: UUID, workspaceID: UUID) async {
+        let awaitedGeneration = configurationEventGeneration
+        await configurationEventTail?.value
+        guard lastFailedConfigurationEventGeneration != awaitedGeneration else { return }
         guard canStartServices(),
               let workspace = config.workspaces.first(where: { $0.id == workspaceID }),
               let service = workspace.services.first(where: { $0.id == serviceID })
@@ -206,6 +261,36 @@ public final class AppState {
         } catch {
             // saveOrThrow has already published the user-facing AppAlert.
         }
+    }
+
+    /// Serializes user configuration events. Every event is applied to the latest
+    /// committed snapshot, so an older UI snapshot can never overwrite a newer event.
+    @discardableResult
+    public func applyConfigurationEvent(
+        _ event: ConfigurationEvent,
+        prepare: @escaping @MainActor (_ current: AppConfig, _ proposed: AppConfig) async throws -> Void = { _, _ in }
+    ) async throws -> AppConfig {
+        let predecessor = configurationEventTail
+        configurationEventGeneration &+= 1
+        let generation = configurationEventGeneration
+        let operation = Task { @MainActor [weak self] () throws -> AppConfig in
+            await predecessor?.value
+            guard let self else { throw CancellationError() }
+            guard let proposed = event.applying(to: config) else {
+                throw ConfigurationEventError.staleTarget
+            }
+            try await prepare(config, proposed)
+            try await saveOrThrow(proposed)
+            return config
+        }
+        configurationEventTail = Task { @MainActor [weak self] in
+            do {
+                _ = try await operation.value
+            } catch {
+                self?.lastFailedConfigurationEventGeneration = generation
+            }
+        }
+        return try await operation.value
     }
 
     /// Persists and adopts a configuration as one main-actor operation. Settings uses

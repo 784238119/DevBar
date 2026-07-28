@@ -4,7 +4,19 @@ import SwiftUI
 struct ServiceEditorSheet: View {
     @Bindable var viewModel: SettingsViewModel
     let workspaceID: UUID
-    @Environment(\.dismiss) private var dismiss
+    private let serviceID: UUID?
+    @State private var service: ServiceConfig
+
+    init(
+        viewModel: SettingsViewModel,
+        workspaceID: UUID,
+        draft: ServiceEditorDraft
+    ) {
+        self.viewModel = viewModel
+        self.workspaceID = workspaceID
+        serviceID = draft.serviceID
+        _service = State(initialValue: draft.service)
+    }
 
     private var locked: Bool { viewModel.isLocked(workspaceID) }
 
@@ -12,15 +24,15 @@ struct ServiceEditorSheet: View {
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(viewModel.serviceEditor?.serviceID == nil ? "添加服务" : "编辑服务")
-                        .font(.system(size: 21, weight: .bold))
+                    Text(serviceID == nil ? "添加服务" : "编辑服务")
+                        .font(.system(size: 19, weight: .bold))
                     Text("命令通过非交互 zsh 在前台运行")
                         .font(.system(size: 11))
                         .foregroundStyle(DevBarTheme.textSecondary)
                 }
                 Spacer()
                 Button {
-                    dismiss()
+                    viewModel.endServiceEditing()
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 20))
@@ -28,18 +40,18 @@ struct ServiceEditorSheet: View {
                 }
                 .buttonStyle(.plain)
             }
-            .padding(24)
+            .padding(20)
 
             Divider().overlay(DevBarTheme.separator)
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 13) {
                     basics
                     command
                     environment
                     health
                 }
-                .padding(24)
+                .padding(20)
             }
 
             Divider().overlay(DevBarTheme.separator)
@@ -51,28 +63,35 @@ struct ServiceEditorSheet: View {
                 }
                 Spacer()
                 Button("取消") {
-                    dismiss()
+                    viewModel.endServiceEditing()
                 }
+                .buttonStyle(SettingsSecondaryButtonStyle())
                 Button("保存服务") {
-                    viewModel.commitServiceEditor(workspaceID: workspaceID)
-                    dismiss()
+                    let draft = ServiceEditorDraft(serviceID: serviceID, service: service)
+                    Task {
+                        _ = await viewModel.commitServiceEditor(
+                            workspaceID: workspaceID,
+                            draft: draft
+                        )
+                        viewModel.endServiceEditing()
+                    }
                 }
                 .buttonStyle(SettingsGradientButtonStyle())
             }
-            .padding(.horizontal, 24)
-            .frame(height: 70)
+            .padding(.horizontal, 20)
+            .frame(height: 60)
         }
-        .frame(width: 680, height: 650)
+        .frame(width: 640, height: 610)
         .background(DevBarTheme.background)
         .accessibilityIdentifier("service.editor")
     }
 
     private var basics: some View {
         SettingsSectionCard {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 11) {
                 Label("基本信息", systemImage: "slider.horizontal.3")
                     .font(.system(size: 14, weight: .bold))
-                TextField("服务名称", text: serviceBinding(\.name))
+                TextField("服务名称", text: $service.name)
                     .textFieldStyle(.roundedBorder)
 
                 HStack(spacing: 10) {
@@ -82,15 +101,20 @@ struct ServiceEditorSheet: View {
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 10)
-                        .frame(height: 34)
-                        .background(Color.white.opacity(0.55), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .frame(height: 32)
+                        .background(DevBarTheme.surfaceSubtle, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                     Button("选择目录") {
-                        Task { await viewModel.chooseServiceDirectory(workspaceID: workspaceID) }
+                        Task {
+                            service = await viewModel.chooseServiceDirectory(
+                                workspaceID: workspaceID,
+                                for: service
+                            )
+                        }
                     }
                     .disabled(locked)
                 }
 
-                Toggle("加入启动全部", isOn: serviceBinding(\.includeInStartAll))
+                Toggle("加入启动全部", isOn: $service.includeInStartAll)
                     .toggleStyle(.switch)
             }
         }
@@ -101,12 +125,12 @@ struct ServiceEditorSheet: View {
             VStack(alignment: .leading, spacing: 10) {
                 Label("启动命令", systemImage: "terminal")
                     .font(.system(size: 14, weight: .bold))
-                TextEditor(text: serviceBinding(\.command))
+                TextEditor(text: $service.command)
                     .font(.system(size: 12, design: .monospaced))
                     .scrollContentBackground(.hidden)
                     .padding(8)
-                    .frame(minHeight: 74)
-                    .background(Color.white.opacity(0.65), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .frame(minHeight: 64)
+                    .background(DevBarTheme.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DevBarTheme.separator.opacity(0.8)))
                 Text("例如：npm run dev 或 mvn spring-boot:run。不要使用需要 TTY 的交互命令。")
                     .font(.system(size: 10))
@@ -121,7 +145,7 @@ struct ServiceEditorSheet: View {
                 Label("服务环境变量", systemImage: "text.badge.plus")
                     .font(.system(size: 14, weight: .bold))
                 EnvironmentEditor(
-                    entries: serviceBinding(\.environment),
+                    entries: $service.environment,
                     disabled: locked,
                     issueForIndex: { _ in nil }
                 )
@@ -131,7 +155,7 @@ struct ServiceEditorSheet: View {
 
     private var health: some View {
         SettingsSectionCard {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 11) {
                 Label("健康检查", systemImage: "heart.text.square")
                     .font(.system(size: 14, weight: .bold))
                 Picker("类型", selection: healthKind) {
@@ -166,78 +190,65 @@ struct ServiceEditorSheet: View {
 
     private var healthKind: Binding<HealthKind> {
         Binding {
-            switch viewModel.serviceEditor?.service.healthCheck ?? .none {
+            switch service.healthCheck {
             case .none: .none
             case .http: .http
             case .tcp: .tcp
             }
         } set: { kind in
-            mutateService { service in
-                switch kind {
-                case .none: service.healthCheck = .none
-                case .http: service.healthCheck = .http(URL(string: "http://127.0.0.1:8080/health")!)
-                case .tcp: service.healthCheck = .tcp(host: "127.0.0.1", port: 8080)
-                }
+            switch kind {
+            case .none: service.healthCheck = .none
+            case .http:
+                service.healthCheck = .http(URL(string: "http://127.0.0.1:8080/health")!)
+            case .tcp:
+                service.healthCheck = .tcp(host: "127.0.0.1", port: 8080)
             }
         }
     }
 
     private var httpURL: Binding<String> {
         Binding {
-            if case let .http(url) = viewModel.serviceEditor?.service.healthCheck { return url.absoluteString }
+            if case let .http(url) = service.healthCheck { return url.absoluteString }
             return ""
         } set: { text in
-            mutateService { service in service.healthCheck = .http(URL(string: text) ?? URL(string: "invalid")!) }
+            service.healthCheck = .http(URL(string: text) ?? URL(string: "invalid")!)
         }
     }
 
     private var tcpHost: Binding<String> {
         Binding {
-            if case let .tcp(host, _) = viewModel.serviceEditor?.service.healthCheck { return host }
+            if case let .tcp(host, _) = service.healthCheck { return host }
             return ""
         } set: { host in
-            mutateService { service in
-                let port: Int
-                if case let .tcp(_, currentPort) = service.healthCheck { port = currentPort } else { port = 8080 }
-                service.healthCheck = .tcp(host: host, port: port)
+            let port: Int
+            if case let .tcp(_, currentPort) = service.healthCheck {
+                port = currentPort
+            } else {
+                port = 8080
             }
+            service.healthCheck = .tcp(host: host, port: port)
         }
     }
 
     private var tcpPort: Binding<Int> {
         Binding {
-            if case let .tcp(_, port) = viewModel.serviceEditor?.service.healthCheck { return port }
+            if case let .tcp(_, port) = service.healthCheck { return port }
             return 8080
         } set: { port in
-            mutateService { service in
-                let host: String
-                if case let .tcp(currentHost, _) = service.healthCheck { host = currentHost } else { host = "127.0.0.1" }
-                service.healthCheck = .tcp(host: host, port: port)
+            let host: String
+            if case let .tcp(currentHost, _) = service.healthCheck {
+                host = currentHost
+            } else {
+                host = "127.0.0.1"
             }
+            service.healthCheck = .tcp(host: host, port: port)
         }
     }
 
     private var directoryText: String {
-        switch viewModel.serviceEditor?.service.workingDirectory ?? .relative(".") {
+        switch service.workingDirectory {
         case let .relative(path): "相对：\(path)"
         case let .absolute(path): "绝对：\(path)"
         }
-    }
-
-    private func serviceBinding<Value>(_ keyPath: WritableKeyPath<ServiceConfig, Value>) -> Binding<Value> {
-        Binding {
-            guard let service = viewModel.serviceEditor?.service else {
-                preconditionFailure("Service editor binding outlived its sheet")
-            }
-            return service[keyPath: keyPath]
-        } set: { value in
-            mutateService { $0[keyPath: keyPath] = value }
-        }
-    }
-
-    private func mutateService(_ mutation: (inout ServiceConfig) -> Void) {
-        guard var editor = viewModel.serviceEditor else { return }
-        mutation(&editor.service)
-        viewModel.serviceEditor = editor
     }
 }

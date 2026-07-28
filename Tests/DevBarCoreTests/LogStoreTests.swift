@@ -86,6 +86,30 @@ final class LogStoreTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: paths.logsRootURL.appendingPathComponent(workspaceID.uuidString.lowercased()).path))
     }
 
+    func testConfigureWritesNewServiceLogsUnderCustomRoot() async throws {
+        let customRoot = root.appendingPathComponent("Custom Logs", isDirectory: true)
+        let store = LogStore(paths: paths, maximumFileSizeBytes: 1_024, fileCount: 3)
+
+        try await store.configure(
+            logDirectory: customRoot.path,
+            logFileSizeMiB: 1,
+            fileCount: 3
+        )
+        try await store.prepare(workspaceID: workspaceID, serviceID: serviceID)
+        await store.append(
+            LogEntry(stream: .stdout, text: "custom root"),
+            workspaceID: workspaceID,
+            serviceID: serviceID
+        )
+
+        let currentLog = customRoot
+            .appendingPathComponent(workspaceID.uuidString.lowercased(), isDirectory: true)
+            .appendingPathComponent(serviceID.uuidString.lowercased(), isDirectory: true)
+            .appendingPathComponent("current.log", isDirectory: false)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: currentLog.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: logDirectory().path))
+    }
+
     private func logDirectory() -> URL {
         paths.logsRootURL
             .appendingPathComponent(workspaceID.uuidString.lowercased(), isDirectory: true)
