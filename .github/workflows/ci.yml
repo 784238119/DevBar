@@ -1,0 +1,15 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test
+        run: >-
+          xcodebuild test -project DevBar.xcodeproj -scheme DevBar
+          -destination 'platform=macOS,arch=arm64'
