@@ -4,13 +4,15 @@ import SwiftUI
 struct SettingsRootView: View {
     @Bindable var viewModel: SettingsViewModel
     let presentationPreferences: AppPresentationPreferences
+    let updateController: AppUpdateController
 
     var body: some View {
         Group {
             if viewModel.showsPreferences {
                 PreferencesView(
                     viewModel: viewModel,
-                    presentationPreferences: presentationPreferences
+                    presentationPreferences: presentationPreferences,
+                    updateController: updateController
                 )
             } else {
                 HStack(spacing: 0) {

@@ -20,6 +20,7 @@ enum DevBarLauncher {
 private struct ProductionDevBarApp: App {
     @NSApplicationDelegateAdaptor(DevBarApplicationDelegate.self) private var applicationDelegate
     @State private var presentationPreferences: AppPresentationPreferences
+    @State private var updateController: AppUpdateController
     @State private var selectedLogServiceID: UUID?
     private let dependencies: AppDependencies
     private var mainWindowCoordinator: MainWindowCoordinator {
@@ -33,6 +34,7 @@ private struct ProductionDevBarApp: App {
         _presentationPreferences = State(
             initialValue: presentationPreferences
         )
+        _updateController = State(initialValue: AppUpdateController())
         applicationDelegate.configure(
             appState: dependencies.appState,
             presentationPreferences: presentationPreferences
@@ -43,13 +45,17 @@ private struct ProductionDevBarApp: App {
         Window("DevBar", id: "main") {
             SettingsSceneContent(
                 dependencies: dependencies,
-                presentationPreferences: presentationPreferences
+                presentationPreferences: presentationPreferences,
+                updateController: updateController
             )
         }
         .defaultSize(width: 980, height: 680)
         .windowStyle(.hiddenTitleBar)
         .commands {
-            MainWindowCommands(coordinator: mainWindowCoordinator)
+            MainWindowCommands(
+                coordinator: mainWindowCoordinator,
+                updateController: updateController
+            )
         }
 
         MenuBarExtra(isInserted: menuBarIconBinding) {
@@ -139,6 +145,7 @@ func statusItemSymbol(for status: AppAggregateStatus) -> String {
 @MainActor
 private struct MainWindowCommands: Commands {
     let coordinator: MainWindowCoordinator
+    let updateController: AppUpdateController
 
     var body: some Commands {
         CommandGroup(replacing: .appSettings) {
@@ -147,6 +154,11 @@ private struct MainWindowCommands: Commands {
             }
             .keyboardShortcut(",", modifiers: .command)
         }
+        CommandGroup(after: .appInfo) {
+            Button("检查更新…") {
+                updateController.checkForUpdates()
+            }
+        }
     }
 }
 
@@ -154,6 +166,7 @@ private struct MainWindowCommands: Commands {
 private struct SettingsSceneContent: View {
     let dependencies: AppDependencies
     let presentationPreferences: AppPresentationPreferences
+    let updateController: AppUpdateController
     @State private var viewModel: SettingsViewModel?
 
     var body: some View {
@@ -161,7 +174,8 @@ private struct SettingsSceneContent: View {
             if let viewModel {
                 SettingsRootView(
                     viewModel: viewModel,
-                    presentationPreferences: presentationPreferences
+                    presentationPreferences: presentationPreferences,
+                    updateController: updateController
                 )
             } else {
                 ProgressView("正在加载配置…")
@@ -233,6 +247,7 @@ private struct LogSceneContent: View {
 private struct UITestDevBarApp: App {
     private let dependencies: AppDependencies
     private let presentationPreferences: AppPresentationPreferences
+    private let updateController: AppUpdateController
 
     init() {
         let environment = ProcessInfo.processInfo.environment
@@ -255,6 +270,7 @@ private struct UITestDevBarApp: App {
             let defaults = UserDefaults(suiteName: suiteName)!
             defaults.removePersistentDomain(forName: suiteName)
             presentationPreferences = AppPresentationPreferences(defaults: defaults)
+            updateController = AppUpdateController(backend: DisabledUpdateBackend())
         } catch {
             fatalError("Could not load DEVBAR_TEST_CONFIG: \(error.localizedDescription)")
         }
@@ -264,7 +280,8 @@ private struct UITestDevBarApp: App {
         WindowGroup("DevBar") {
             UITestHost(
                 dependencies: dependencies,
-                presentationPreferences: presentationPreferences
+                presentationPreferences: presentationPreferences,
+                updateController: updateController
             )
         }
         .windowResizability(.contentSize)
@@ -275,6 +292,7 @@ private struct UITestDevBarApp: App {
 private struct UITestHost: View {
     let dependencies: AppDependencies
     let presentationPreferences: AppPresentationPreferences
+    let updateController: AppUpdateController
     @State private var showSettings = false
     @State private var showLogs = false
     @State private var selectedLogServiceID: UUID?
@@ -302,7 +320,8 @@ private struct UITestHost: View {
         .sheet(isPresented: $showSettings) {
             SettingsSceneContent(
                 dependencies: dependencies,
-                presentationPreferences: presentationPreferences
+                presentationPreferences: presentationPreferences,
+                updateController: updateController
             )
         }
         .sheet(isPresented: $showLogs) {

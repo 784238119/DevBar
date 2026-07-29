@@ -4,6 +4,7 @@ import SwiftUI
 struct PreferencesView: View {
     @Bindable var viewModel: SettingsViewModel
     let presentationPreferences: AppPresentationPreferences
+    @Bindable var updateController: AppUpdateController
 
     var body: some View {
         ScrollView {
@@ -27,8 +28,41 @@ struct PreferencesView: View {
                     VStack(alignment: .leading, spacing: 5) {
                         Text("偏好设置")
                             .font(.system(size: 23, weight: .bold))
-                        Text("应用外观、Shell、日志轮转和安全停止策略")
+                        Text("应用外观、版本更新、Shell、日志轮转和安全停止策略")
                             .font(.system(size: 12))
+                            .foregroundStyle(DevBarTheme.textSecondary)
+                    }
+                }
+
+                SettingsSectionCard {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label("版本更新", systemImage: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 15, weight: .bold))
+                        HStack {
+                            Text("当前版本")
+                            Spacer()
+                            Text(currentVersion)
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundStyle(DevBarTheme.textSecondary)
+                        }
+                        Toggle(
+                            "自动检查更新",
+                            isOn: $updateController.automaticallyChecksForUpdates
+                        )
+                        .toggleStyle(.checkbox)
+                        .accessibilityIdentifier("preferences.automaticallyChecksForUpdates")
+                        HStack(spacing: 10) {
+                            Button {
+                                updateController.checkForUpdates()
+                            } label: {
+                                Label("立即检查更新", systemImage: "arrow.clockwise")
+                            }
+                            .accessibilityIdentifier("preferences.checkForUpdates")
+                            Link("查看 GitHub Releases", destination: AppUpdateController.releasesURL)
+                                .accessibilityIdentifier("preferences.openReleases")
+                        }
+                        Text("更新清单来自公开 GitHub 仓库。发现新版本后由 Sparkle 验证更新签名，并提示下载安装。")
+                            .font(.system(size: 11))
                             .foregroundStyle(DevBarTheme.textSecondary)
                     }
                 }
@@ -190,6 +224,14 @@ struct PreferencesView: View {
             return "仍有服务正在运行；请全部停止后再切换目录。已有日志不会自动迁移。"
         }
         return "默认保存在 /tmp/DevBar/Logs。切换目录不会迁移已有日志。"
+    }
+
+    private var currentVersion: String {
+        let version = Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleShortVersionString"
+        ) as? String ?? "未知"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        return build.map { "\(version) (\($0))" } ?? version
     }
 
     private func preferenceStepper(

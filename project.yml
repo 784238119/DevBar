@@ -8,6 +8,10 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
     MACOSX_DEPLOYMENT_TARGET: "15.0"
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: 2.9.2
 targets:
   DevBarCore:
     type: library.static
@@ -43,6 +47,7 @@ targets:
         CODE_SIGN_IDENTITY: "-"
     dependencies:
       - target: DevBarCore
+      - package: Sparkle
       - target: DevBarRunner
         embed: false
         link: false

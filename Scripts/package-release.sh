@@ -16,9 +16,11 @@ archive_checksum_path="${archive_path}.sha256"
 dmg_path="${dist_dir}/DevBar-${version}-macos-${architecture}.dmg"
 dmg_checksum_path="${dmg_path}.sha256"
 staging_dir=$(mktemp -d "${TMPDIR:-/tmp}/DevBar-DMG.XXXXXX")
+appcast_staging_dir=$(mktemp -d "${TMPDIR:-/tmp}/DevBar-Appcast.XXXXXX")
 
 cleanup() {
   rm -rf "${staging_dir}"
+  rm -rf "${appcast_staging_dir}"
 }
 trap cleanup EXIT
 
@@ -69,7 +71,26 @@ ln -s /Applications "${staging_dir}/Applications"
   /usr/bin/shasum -a 256 "${dmg_path:t}" > "${dmg_checksum_path:t}"
 )
 
+sparkle_generate_appcast="${derived_data}/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_appcast"
+[[ -x "${sparkle_generate_appcast}" ]] || {
+  print -u2 "Sparkle generate_appcast was not found at ${sparkle_generate_appcast}"
+  exit 1
+}
+
+/usr/bin/ditto "${dmg_path}" "${appcast_staging_dir}/${dmg_path:t}"
+if [[ -f "${project_root}/appcast.xml" ]]; then
+  /usr/bin/ditto "${project_root}/appcast.xml" "${appcast_staging_dir}/appcast.xml"
+fi
+"${sparkle_generate_appcast}" \
+  --account DevBar \
+  --maximum-deltas 0 \
+  --download-url-prefix "https://github.com/784238119/DevBar/releases/download/v${version}/" \
+  --link "https://github.com/784238119/DevBar/releases/tag/v${version}" \
+  "${appcast_staging_dir}"
+/usr/bin/ditto "${appcast_staging_dir}/appcast.xml" "${project_root}/appcast.xml"
+
 print "Created ${archive_path}"
 print "Created ${archive_checksum_path}"
 print "Created ${dmg_path}"
 print "Created ${dmg_checksum_path}"
+print "Updated ${project_root}/appcast.xml"
