@@ -81,11 +81,15 @@ public struct PosixSpawner: Sendable {
 
         try request.workingDirectory.withCString { path in
             let result: Int32
+#if compiler(>=6.2)
             if #available(macOS 26.0, *) {
                 result = posix_spawn_file_actions_addchdir(&actions, path)
             } else {
                 result = posix_spawn_file_actions_addchdir_np(&actions, path)
             }
+#else
+            result = posix_spawn_file_actions_addchdir_np(&actions, path)
+#endif
             try check(result, operation: "posix_spawn_file_actions_addchdir")
         }
         try check(
