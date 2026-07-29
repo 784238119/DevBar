@@ -36,28 +36,11 @@ jobs:
           fi
           app_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Configuration/DevBar-Info.plist)
           test "$branch_version" = "$app_version"
-      - name: Import Developer ID certificate
+      - name: Build ad-hoc signed package
         env:
-          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE_P12 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        run: |
-          test -n "$CERTIFICATE" && test -n "$CERTIFICATE_PASSWORD" && test -n "$KEYCHAIN_PASSWORD"
-          keychain="$RUNNER_TEMP/build.keychain-db"
-          echo "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
-          security set-keychain-settings -lut 21600 "$keychain"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
-          security import "$RUNNER_TEMP/certificate.p12" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
-          security list-keychain -d user -s "$keychain"
-      - name: Build, sign, notarize, and package
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
-          test -n "$APPLE_ID" && test -n "$APPLE_TEAM_ID" && test -n "$APPLE_APP_SPECIFIC_PASSWORD" && test -n "$SPARKLE_PRIVATE_KEY"
+          test -n "$SPARKLE_PRIVATE_KEY"
           ./Scripts/ci-release.sh
       - name: Create release and upload assets
         env:
