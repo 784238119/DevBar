@@ -1,9 +1,6 @@
 name: Release
 
 on:
-  pull_request:
-    types: [closed]
-    branches: [main]
   workflow_dispatch:
     inputs:
       version:
@@ -11,23 +8,23 @@ on:
         required: true
         type: string
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 permissions:
   contents: write
   pull-requests: write
 
 jobs:
   publish:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.pull_request.merged == true &&
-      startsWith(github.event.pull_request.head.ref, 'dev-'))
     runs-on: macos-15
     env:
-      VERSION: ${{ github.event_name == 'workflow_dispatch' && format('dev-{0}', inputs.version) || github.event.pull_request.head.ref }}
+      VERSION: dev-${{ inputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.event.pull_request.merge_commit_sha }}
+          ref: main
       - name: Validate iteration version
         run: |
           branch_version="${VERSION#dev-}"
@@ -49,10 +46,14 @@ jobs:
         run: |
           version="${VERSION#dev-}"
           if gh release view "v${version}" >/dev/null 2>&1; then
-            gh release upload "v${version}" dist/*.dmg dist/*.sha256 --clobber
-          else
-            gh release create "v${version}" dist/*.dmg dist/*.sha256 --title "v${version}" --generate-notes
+            echo "Release v${version} already exists. Publish a new version instead of replacing released assets." >&2
+            exit 1
           fi
+          release_sha=$(git rev-parse HEAD)
+          gh release create "v${version}" dist/*.dmg dist/*.sha256 \
+            --target "$release_sha" \
+            --title "v${version}" \
+            --generate-notes
       - name: Create appcast pull request
         env:
           GH_TOKEN: ${{ github.token }}
@@ -64,7 +65,7 @@ jobs:
           git add appcast.xml
           if ! git diff --cached --quiet; then
             git commit -m "chore: publish appcast for v${version}"
-            git push --force origin "HEAD:refs/heads/${branch}"
+            git push origin "HEAD:refs/heads/${branch}"
             if [[ "$(gh pr list --base main --head "${branch}" --state open --json number --jq 'length')" == "0" ]]; then
               gh pr create \
                 --base main \
