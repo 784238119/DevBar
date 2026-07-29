@@ -64,6 +64,7 @@ private struct WorkspaceSettingsContent: View {
                 TextField("工作区名称", text: $workspace.name)
                     .textFieldStyle(.plain)
                     .font(.system(size: 23, weight: .bold))
+                    .accessibilityIdentifier("workspace.name")
                     .focused($isWorkspaceNameFocused)
                     .onSubmit {
                         Task { await viewModel.commitWorkspace(workspace.id) }

@@ -86,8 +86,8 @@ final class MenuBarFlowUITests: XCTestCase {
         XCTAssertFalse(app.buttons["config.save"].exists)
         XCTAssertFalse(app.buttons["config.discard"].exists)
 
-        let nameField = app.textFields.matching(NSPredicate(format: "value == %@", "MuseCube")).firstMatch
-        XCTAssertTrue(nameField.exists)
+        let nameField = app.textFields["workspace.name"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 3))
         nameField.click()
         nameField.typeKey("a", modifierFlags: .command)
         nameField.typeText("Changed")
