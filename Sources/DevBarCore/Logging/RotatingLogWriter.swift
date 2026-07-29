@@ -108,6 +108,36 @@ public final class RotatingLogWriter: @unchecked Sendable {
         return records
     }
 
+    /// Reads the same chronological result as `tail -n`, without decoding older
+    /// records once the requested suffix has been found.
+    public func readRecentRecords(
+        limit: Int,
+        skippingMalformed: (String) -> Void
+    ) throws -> [LogEntry] {
+        guard limit > 0 else { return [] }
+        try prepare()
+        var newestFirst: [LogEntry] = []
+        var warned = false
+
+        for url in logURLsOldestFirst().reversed() where fileManager.fileExists(atPath: url.path) {
+            guard try isRegularNonSymlink(url) else { throw RotatingLogWriterError.unsafeLogDirectory }
+            let data: Data
+            do { data = try Data(contentsOf: url) }
+            catch { throw RotatingLogWriterError.fileSystem(error.localizedDescription) }
+            for line in data.split(separator: 0x0A, omittingEmptySubsequences: true).reversed() {
+                let decoded = String(decoding: line, as: UTF8.self)
+                if let record = decodeRecord(decoded) {
+                    newestFirst.append(record)
+                    if newestFirst.count == limit { return Array(newestFirst.reversed()) }
+                } else if !warned {
+                    warned = true
+                    skippingMalformed("Skipped one or more malformed log records.")
+                }
+            }
+        }
+        return Array(newestFirst.reversed())
+    }
+
     public func removeHistory() throws {
         guard fileManager.fileExists(atPath: directory.path) else { return }
         guard try isDirectoryNonSymlink(directory) else { throw RotatingLogWriterError.unsafeLogDirectory }

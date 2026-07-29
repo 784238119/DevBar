@@ -36,7 +36,9 @@ public enum LogStoreError: Error, Equatable, Sendable, LocalizedError {
 /// The UI-facing log store. Both memory and disk receive the same terminal-sanitized
 /// command output. Environment dictionaries and launch requests never enter this API.
 public actor LogStore {
-    public static let defaultMaximumEntries = 2_000
+    /// Mirrors `tail -f -n 5000`: the in-memory viewer retains the most recent
+    /// 5,000 output lines while the rotating files remain the full source of history.
+    public static let defaultMaximumEntries = 5_000
 
     private struct ServiceLocation: Sendable {
         let workspaceID: UUID
@@ -175,11 +177,10 @@ public actor LogStore {
         if !loadedHistory.contains(serviceID) {
             do {
                 let writer = try writer(workspaceID: workspaceID, serviceID: serviceID)
-                let records = try writer.readAllRecords { message in
+                let records = try writer.readRecentRecords(limit: limit) { message in
                     self.emitWarning(serviceID: serviceID, kind: .malformedRecord, message: message)
                 }
-                entriesByService[serviceID] = []
-                for record in records { appendToMemory(record, serviceID: serviceID) }
+                replaceMemory(with: records, serviceID: serviceID)
                 loadedHistory.insert(serviceID)
             } catch {
                 emitWarning(serviceID: serviceID, kind: .read, message: error.localizedDescription)
@@ -289,11 +290,36 @@ public actor LogStore {
 
     private func appendToMemory(_ entry: LogEntry, serviceID: UUID) {
         var entries = entriesByService[serviceID] ?? []
-        entries.append(entry)
+        entries.append(contentsOf: displayLines(from: entry))
         if entries.count > maximumEntries {
             entries.removeFirst(entries.count - maximumEntries)
         }
         entriesByService[serviceID] = entries
+    }
+
+    private func replaceMemory(with records: [LogEntry], serviceID: UUID) {
+        var lines: [LogEntry] = []
+        lines.reserveCapacity(min(maximumEntries, records.count))
+        for record in records {
+            lines.append(contentsOf: displayLines(from: record))
+            if lines.count > maximumEntries * 2 {
+                lines = Array(lines.suffix(maximumEntries))
+            }
+        }
+        entriesByService[serviceID] = Array(lines.suffix(maximumEntries))
+    }
+
+    /// Pipe callbacks may contain many lines. Splitting only the in-memory display
+    /// makes the retention limit match `tail -n` without changing on-disk output.
+    private func displayLines(from entry: LogEntry) -> [LogEntry] {
+        let components = entry.text.components(separatedBy: "\n")
+        return components.enumerated().compactMap { index, component in
+            if index == components.count - 1, component.isEmpty, entry.text.hasSuffix("\n") {
+                return nil
+            }
+            let suffix = index < components.count - 1 ? "\n" : ""
+            return LogEntry(timestamp: entry.timestamp, stream: entry.stream, text: component + suffix)
+        }
     }
 
     private func appendSanitized(

@@ -1,6 +1,7 @@
 import AppKit
 import DevBarCore
 import Foundation
+import Observation
 
 @MainActor
 struct AppDependencies {
@@ -8,6 +9,7 @@ struct AppDependencies {
     let paths: AppPaths
     let logStore: LogStore
     let deletionCoordinator: DeletionCoordinator
+    let logWindowSelection: LogWindowSelection
 
     static func live() -> AppDependencies {
         let paths = AppPaths()
@@ -27,7 +29,8 @@ struct AppDependencies {
             deletionCoordinator: DeletionCoordinator(
                 paths: paths,
                 configurationStore: configurationStore
-            )
+            ),
+            logWindowSelection: LogWindowSelection()
         )
     }
 
@@ -51,7 +54,8 @@ struct AppDependencies {
             deletionCoordinator: DeletionCoordinator(
                 paths: paths,
                 configurationStore: configurationStore
-            )
+            ),
+            logWindowSelection: LogWindowSelection()
         )
     }
 
@@ -126,6 +130,15 @@ struct AppDependencies {
         case .stopped, .failed: false
         }
     }
+}
+
+/// Keeps the requested log service independent of SwiftUI Window scene creation.
+/// A `Window` can be materialized before the menu-bar action's value propagates,
+/// so the scene reads this shared observable selection when it becomes visible.
+@MainActor
+@Observable
+final class LogWindowSelection {
+    var serviceID: UUID?
 }
 
 private enum LogHistoryActionError: Error, LocalizedError {

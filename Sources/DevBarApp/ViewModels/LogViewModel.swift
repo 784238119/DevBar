@@ -192,6 +192,8 @@ final class LogViewModel {
         guard generation == selectionGeneration,
               selectedService.serviceID == selectedServiceID
         else { return }
-        loadedEntries = Array(entries.suffix(LogStore.defaultMaximumEntries))
+        let latestEntries = Array(entries.suffix(LogStore.defaultMaximumEntries))
+        guard latestEntries != loadedEntries else { return }
+        loadedEntries = latestEntries
     }
 }

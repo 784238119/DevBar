@@ -1,3 +1,4 @@
+import AppKit
 import DevBarCore
 import SwiftUI
 
@@ -150,7 +151,7 @@ struct LogWindowView: View {
                 description: Text(viewModel.searchQuery.isEmpty ? "服务输出会实时显示在这里。" : "搜索只针对当前已加载的日志。")
             )
         } else {
-            LogRowsView(viewModel: viewModel)
+            TerminalOutputView(viewModel: viewModel)
         }
     }
 
@@ -224,78 +225,82 @@ struct LogWindowView: View {
     }
 }
 
-private struct LogRowsView: View {
-    @Bindable var viewModel: LogViewModel
+private struct TerminalOutputView: NSViewRepresentable {
+    let entries: [LogEntry]
+    let followsOutput: Bool
 
-    var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(viewModel.filteredEntries.enumerated()), id: \.offset) { index, entry in
-                        LogEntryRow(entry: entry)
-                            .id(index)
-                    }
-                }
-                .padding(.vertical, 8)
-            }
-            .background(DevBarTheme.surfaceSubtle.opacity(0.55))
-            .onAppear { scrollToBottom(proxy, animated: false) }
-            .onChange(of: viewModel.filteredEntries.count) {
-                scrollToBottom(proxy, animated: true)
-            }
+    init(viewModel: LogViewModel) {
+        entries = viewModel.filteredEntries
+        followsOutput = !viewModel.isAutoScrollPaused
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let textView = NSTextView()
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.isRichText = false
+        textView.allowsUndo = false
+        textView.backgroundColor = NSColor(LogTerminalTheme.background)
+        textView.textColor = NSColor(LogTerminalTheme.text)
+        textView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        textView.textContainerInset = NSSize(width: 14, height: 12)
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.layoutManager?.allowsNonContiguousLayout = true
+
+        let scrollView = NSScrollView()
+        scrollView.documentView = textView
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = NSColor(LogTerminalTheme.background)
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = scrollView.documentView as? NSTextView else { return }
+        let output = entries.map(\.text).joined()
+        guard output != context.coordinator.output else { return }
+
+        let wasAtBottom = isAtBottom(scrollView)
+        let storage = textView.textStorage ?? NSTextStorage()
+        if output.hasPrefix(context.coordinator.output) {
+            let suffix = String(output.dropFirst(context.coordinator.output.count))
+            storage.append(attributedTerminalText(suffix))
+        } else {
+            storage.setAttributedString(attributedTerminalText(output))
+        }
+        context.coordinator.output = output
+
+        if followsOutput && wasAtBottom {
+            textView.scrollRangeToVisible(NSRange(location: storage.length, length: 0))
         }
     }
 
-    private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool) {
-        guard !viewModel.isAutoScrollPaused, !viewModel.filteredEntries.isEmpty else { return }
-        let target = viewModel.filteredEntries.count - 1
-        if animated {
-            withAnimation(.easeOut(duration: 0.16)) { proxy.scrollTo(target, anchor: .bottom) }
-        } else {
-            proxy.scrollTo(target, anchor: .bottom)
-        }
+    private func isAtBottom(_ scrollView: NSScrollView) -> Bool {
+        guard let documentView = scrollView.documentView else { return true }
+        return scrollView.contentView.bounds.maxY >= documentView.bounds.maxY - 2
+    }
+
+    private func attributedTerminalText(_ text: String) -> NSAttributedString {
+        NSAttributedString(
+            string: text,
+            attributes: [
+                .foregroundColor: NSColor(LogTerminalTheme.text),
+                .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+            ]
+        )
+    }
+
+    final class Coordinator {
+        var output = ""
     }
 }
 
-private struct LogEntryRow: View {
-    let entry: LogEntry
-
-    private static let timestampFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "HH:mm:ss.SSS"
-        return formatter
-    }()
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Text(Self.timestampFormatter.string(from: entry.timestamp))
-                .foregroundStyle(DevBarTheme.textSecondary.opacity(0.82))
-                .frame(width: 86, alignment: .leading)
-
-            Text(entry.stream == .stdout ? "OUT" : "ERR")
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                .foregroundStyle(entry.stream == .stdout ? DevBarTheme.accentEnd : Color.red.opacity(0.86))
-                .padding(.horizontal, 6)
-                .frame(height: 18)
-                .background(
-                    (entry.stream == .stdout ? DevBarTheme.accentEnd : Color.red).opacity(0.09),
-                    in: Capsule()
-                )
-
-            Text(entry.text)
-                .foregroundStyle(DevBarTheme.textPrimary.opacity(0.92))
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Spacer(minLength: 8)
-        }
-        .font(.system(size: 11.5, design: .monospaced))
-        .padding(.horizontal, 18)
-        .padding(.vertical, 7)
-        .background(entry.stream == .stderr ? Color.red.opacity(0.025) : Color.clear)
-        .overlay(alignment: .bottom) {
-            Divider().overlay(DevBarTheme.separator.opacity(0.34))
-        }
-    }
+private enum LogTerminalTheme {
+    static let background = Color(red: 0.035, green: 0.055, blue: 0.078)
+    static let text = Color(red: 0.88, green: 0.93, blue: 0.91)
 }

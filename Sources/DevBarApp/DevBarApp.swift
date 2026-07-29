@@ -21,7 +21,7 @@ private struct ProductionDevBarApp: App {
     @NSApplicationDelegateAdaptor(DevBarApplicationDelegate.self) private var applicationDelegate
     @State private var presentationPreferences: AppPresentationPreferences
     @State private var updateController: AppUpdateController
-    @State private var selectedLogServiceID: UUID?
+    @State private var statusItemController: StatusItemController?
     private let dependencies: AppDependencies
     private var mainWindowCoordinator: MainWindowCoordinator {
         applicationDelegate.mainWindowCoordinator
@@ -46,7 +46,9 @@ private struct ProductionDevBarApp: App {
             SettingsSceneContent(
                 dependencies: dependencies,
                 presentationPreferences: presentationPreferences,
-                updateController: updateController
+                updateController: updateController,
+                mainWindowCoordinator: mainWindowCoordinator,
+                installStatusItem: installStatusItemIfNeeded
             )
         }
         .defaultSize(width: 980, height: 680)
@@ -58,35 +60,33 @@ private struct ProductionDevBarApp: App {
             )
         }
 
-        MenuBarExtra(isInserted: menuBarIconBinding) {
-            ProductionMenuContent(
-                dependencies: dependencies,
-                presentationPreferences: presentationPreferences,
-                mainWindowCoordinator: mainWindowCoordinator,
-                selectedLogServiceID: $selectedLogServiceID
-            )
-        } label: {
-            ProductionStatusItem(
-                appState: dependencies.appState,
-                mainWindowCoordinator: mainWindowCoordinator
-            )
-        }
-        .menuBarExtraStyle(.window)
-
         Window("服务日志", id: "logs") {
             LogSceneContent(
                 dependencies: dependencies,
-                presentationPreferences: presentationPreferences,
-                selectedServiceID: selectedLogServiceID
+                presentationPreferences: presentationPreferences
             )
         }
         .defaultSize(width: 900, height: 600)
     }
 
-    private var menuBarIconBinding: Binding<Bool> {
-        Binding(
-            get: { presentationPreferences.showsMenuBarIcon },
-            set: { presentationPreferences.showsMenuBarIcon = $0 }
+    private func installStatusItemIfNeeded() {
+        guard statusItemController == nil else { return }
+        let dependencies = dependencies
+        let presentationPreferences = presentationPreferences
+        let mainWindowCoordinator = mainWindowCoordinator
+        statusItemController = StatusItemController(
+            appState: dependencies.appState,
+            presentationPreferences: presentationPreferences,
+            mainWindowCoordinator: mainWindowCoordinator,
+            menuContent: {
+                AnyView(
+                    ProductionMenuContent(
+                        dependencies: dependencies,
+                        presentationPreferences: presentationPreferences,
+                        mainWindowCoordinator: mainWindowCoordinator
+                    )
+                )
+            }
         )
     }
 }
@@ -96,7 +96,6 @@ private struct ProductionMenuContent: View {
     let dependencies: AppDependencies
     let presentationPreferences: AppPresentationPreferences
     let mainWindowCoordinator: MainWindowCoordinator
-    @Binding var selectedLogServiceID: UUID?
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -106,7 +105,7 @@ private struct ProductionMenuContent: View {
                 mainWindowCoordinator.openMainWindow()
             },
             openLogs: { serviceID in
-                selectedLogServiceID = serviceID
+                dependencies.logWindowSelection.serviceID = serviceID
                 NSApp.activate(ignoringOtherApps: true)
                 openWindow(id: "logs")
             }
@@ -116,21 +115,95 @@ private struct ProductionMenuContent: View {
 }
 
 @MainActor
-private struct ProductionStatusItem: View {
-    @Bindable var appState: AppState
-    let mainWindowCoordinator: MainWindowCoordinator
-    @Environment(\.openWindow) private var openWindow
+private final class StatusItemController: NSObject {
+    private let appState: AppState
+    private let presentationPreferences: AppPresentationPreferences
+    private let mainWindowCoordinator: MainWindowCoordinator
+    private let menuContent: () -> AnyView
+    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    private let popover = NSPopover()
 
-    var body: some View {
-        Image(systemName: statusItemSymbol(for: appState.aggregateStatus))
-            .accessibilityLabel("DevBar")
-            .task {
-                mainWindowCoordinator.register {
-                    openWindow(id: "main")
-                }
-            }
+    init(
+        appState: AppState,
+        presentationPreferences: AppPresentationPreferences,
+        mainWindowCoordinator: MainWindowCoordinator,
+        menuContent: @escaping () -> AnyView
+    ) {
+        self.appState = appState
+        self.presentationPreferences = presentationPreferences
+        self.mainWindowCoordinator = mainWindowCoordinator
+        self.menuContent = menuContent
+        super.init()
+        configureStatusItem()
+        observePresentation()
     }
 
+    private func configureStatusItem() {
+        guard let button = statusItem.button else { return }
+        button.target = self
+        button.action = #selector(handleStatusItemClick)
+        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        button.toolTip = "DevBar"
+        popover.behavior = .transient
+    }
+
+    private func observePresentation() {
+        withObservationTracking {
+            statusItem.isVisible = presentationPreferences.showsMenuBarIcon
+            setStatusImage(for: appState.aggregateStatus)
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                self?.observePresentation()
+            }
+        }
+    }
+
+    private func setStatusImage(for status: AppAggregateStatus) {
+        statusItem.button?.image = NSImage(
+            systemSymbolName: statusItemSymbol(for: status),
+            accessibilityDescription: "DevBar"
+        )
+    }
+
+    @objc private func handleStatusItemClick() {
+        guard let event = NSApp.currentEvent else { return }
+        if event.type == .rightMouseUp {
+            contextMenu.popUp(positioning: nil, at: event.locationInWindow, in: statusItem.button)
+        } else {
+            togglePopover()
+        }
+    }
+
+    private func togglePopover() {
+        guard let button = statusItem.button else { return }
+        if popover.isShown {
+            popover.performClose(nil)
+            return
+        }
+        popover.contentViewController = NSHostingController(rootView: menuContent())
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+    }
+
+    private lazy var contextMenu: NSMenu = {
+        let menu = NSMenu()
+        menu.addItem(
+            withTitle: "显示主页",
+            action: #selector(showMainWindow),
+            keyEquivalent: ""
+        )
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "退出", action: #selector(quit), keyEquivalent: "")
+        menu.items.forEach { $0.target = self }
+        return menu
+    }()
+
+    @objc private func showMainWindow() {
+        mainWindowCoordinator.openMainWindow()
+    }
+
+    @objc private func quit() {
+        NSApp.terminate(nil)
+    }
 }
 
 func statusItemSymbol(for status: AppAggregateStatus) -> String {
@@ -167,7 +240,10 @@ private struct SettingsSceneContent: View {
     let dependencies: AppDependencies
     let presentationPreferences: AppPresentationPreferences
     let updateController: AppUpdateController
+    let mainWindowCoordinator: MainWindowCoordinator?
+    let installStatusItem: (() -> Void)?
     @State private var viewModel: SettingsViewModel?
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         Group {
@@ -184,6 +260,13 @@ private struct SettingsSceneContent: View {
             }
         }
         .devBarAppearance(presentationPreferences.appearance)
+        .task { installStatusItem?() }
+        .task {
+            guard let mainWindowCoordinator else { return }
+            mainWindowCoordinator.register {
+                openWindow(id: "main")
+            }
+        }
         .task { await prepareViewModel() }
         .onChange(of: dependencies.appState.config) { _, configuration in
             viewModel?.synchronize(with: configuration)
@@ -209,7 +292,6 @@ private struct SettingsSceneContent: View {
 private struct LogSceneContent: View {
     let dependencies: AppDependencies
     let presentationPreferences: AppPresentationPreferences
-    let selectedServiceID: UUID?
     @State private var viewModel: LogViewModel?
 
     var body: some View {
@@ -223,22 +305,26 @@ private struct LogSceneContent: View {
             }
         }
         .devBarAppearance(presentationPreferences.appearance)
+        .onChange(of: dependencies.logWindowSelection.serviceID) { _, serviceID in
+            guard dependencies.appState.isConfigurationReady else { return }
+            viewModel = dependencies.makeLogViewModel(selectedServiceID: serviceID)
+        }
         .task {
             while !dependencies.appState.isConfigurationReady {
                 guard !Task.isCancelled else { return }
                 try? await Task.sleep(for: .milliseconds(20))
             }
             if viewModel == nil {
-                viewModel = dependencies.makeLogViewModel(selectedServiceID: selectedServiceID)
+                viewModel = dependencies.makeLogViewModel(
+                    selectedServiceID: dependencies.logWindowSelection.serviceID
+                )
             }
         }
         .onAppear {
             guard dependencies.appState.isConfigurationReady else { return }
-            viewModel = dependencies.makeLogViewModel(selectedServiceID: selectedServiceID)
-        }
-        .onChange(of: selectedServiceID) { _, serviceID in
-            guard dependencies.appState.isConfigurationReady else { return }
-            viewModel = dependencies.makeLogViewModel(selectedServiceID: serviceID)
+            viewModel = dependencies.makeLogViewModel(
+                selectedServiceID: dependencies.logWindowSelection.serviceID
+            )
         }
     }
 }
@@ -295,7 +381,6 @@ private struct UITestHost: View {
     let updateController: AppUpdateController
     @State private var showSettings = false
     @State private var showLogs = false
-    @State private var selectedLogServiceID: UUID?
     @State private var didHandleFirstLaunch = false
 
     var body: some View {
@@ -303,7 +388,7 @@ private struct UITestHost: View {
             appState: dependencies.appState,
             openSettings: { openSettings() },
             openLogs: { serviceID in
-                selectedLogServiceID = serviceID
+                dependencies.logWindowSelection.serviceID = serviceID
                 showLogs = true
             }
         )
@@ -321,14 +406,15 @@ private struct UITestHost: View {
             SettingsSceneContent(
                 dependencies: dependencies,
                 presentationPreferences: presentationPreferences,
-                updateController: updateController
+                updateController: updateController,
+                mainWindowCoordinator: nil,
+                installStatusItem: nil
             )
         }
         .sheet(isPresented: $showLogs) {
             LogSceneContent(
                 dependencies: dependencies,
-                presentationPreferences: presentationPreferences,
-                selectedServiceID: selectedLogServiceID
+                presentationPreferences: presentationPreferences
             )
         }
     }
