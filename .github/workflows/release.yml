@@ -4,6 +4,12 @@ on:
   pull_request:
     types: [closed]
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version, without the v prefix (for example 0.2.3)
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -11,18 +17,23 @@ permissions:
 jobs:
   publish:
     if: >-
-      github.event.pull_request.merged == true &&
-      startsWith(github.event.pull_request.head.ref, 'dev-')
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'dev-'))
     runs-on: macos-15
     env:
-      VERSION: ${{ github.event.pull_request.head.ref }}
+      VERSION: ${{ github.event_name == 'workflow_dispatch' && format('dev-{0}', inputs.version) || github.event.pull_request.head.ref }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.event.pull_request.merge_commit_sha }}
       - name: Validate iteration version
         run: |
           branch_version="${VERSION#dev-}"
+          if [[ ! "$branch_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid release version: $branch_version" >&2
+            exit 1
+          fi
           app_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Configuration/DevBar-Info.plist)
           test "$branch_version" = "$app_version"
       - name: Import Developer ID certificate
@@ -53,7 +64,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           version="${VERSION#dev-}"
-          gh release create "v${version}" dist/*.dmg dist/*.sha256 --title "v${version}" --generate-notes
+          if gh release view "v${version}" >/dev/null 2>&1; then
+            gh release upload "v${version}" dist/*.dmg dist/*.sha256 --clobber
+          else
+            gh release create "v${version}" dist/*.dmg dist/*.sha256 --title "v${version}" --generate-notes
+          fi
       - name: Publish appcast after release assets are available
         env:
           GH_TOKEN: ${{ github.token }}
@@ -61,5 +76,7 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add appcast.xml
-          git commit -m "chore: publish appcast for v${VERSION#dev-}"
-          git push origin HEAD:main
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: publish appcast for v${VERSION#dev-}"
+            git push origin HEAD:main
+          fi
