@@ -28,12 +28,21 @@ jobs:
     env:
       TARGET_BRANCH: ${{ github.event_name == 'workflow_dispatch' && inputs.branch || github.event.pull_request.head.ref }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out trusted automation
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Check out release branch
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.TARGET_BRANCH }}
+          path: release
       - name: Sync Info.plist version from branch
-        run: ./Scripts/sync-version-from-branch.sh "$TARGET_BRANCH"
+        working-directory: release
+        run: ../Scripts/sync-version-from-branch.sh "$TARGET_BRANCH" Configuration/DevBar-Info.plist
       - name: Commit version update
+        working-directory: release
         run: |
           if git diff --quiet -- Configuration/DevBar-Info.plist; then
             exit 0
