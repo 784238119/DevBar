@@ -71,6 +71,32 @@ final class LogStoreTests: XCTestCase {
         XCTAssertTrue(logDirectory().path.contains(serviceID.uuidString.lowercased()))
     }
 
+    func testInMemoryRetentionCountsOutputLinesLikeTail() async throws {
+        let store = LogStore(paths: paths, maximumEntries: 3, maximumFileSizeBytes: 1_024, fileCount: 3)
+        try await store.prepare(workspaceID: workspaceID, serviceID: serviceID)
+
+        await store.append(
+            LogEntry(stream: .stdout, text: "one\ntwo\nthree\nfour\n"),
+            workspaceID: workspaceID,
+            serviceID: serviceID
+        )
+
+        let entries = await store.entries(serviceID: serviceID)
+        XCTAssertEqual(entries.map(\.text), ["two\n", "three\n", "four\n"])
+    }
+
+    func testLoadRecentOnlyDecodesTheRequestedTail() async throws {
+        let writer = try RotatingLogWriter(directory: logDirectory(), maximumFileSizeBytes: 1_024 * 1_024, fileCount: 3)
+        for index in 0 ..< 10 {
+            try writer.append(LogEntry(timestamp: Date(timeIntervalSince1970: Double(index)), stream: .stdout, text: "line-\(index)\n"))
+        }
+
+        let store = LogStore(paths: paths, maximumEntries: 3, maximumFileSizeBytes: 1_024 * 1_024, fileCount: 3)
+        let loaded = await store.loadRecent(workspaceID: workspaceID, serviceID: serviceID)
+
+        XCTAssertEqual(loaded.map(\.text), ["line-7\n", "line-8\n", "line-9\n"])
+    }
+
     func testClearViewLeavesHistoryAndDeleteHistoryOnlyUsesMappedUUIDDirectory() async throws {
         let store = LogStore(paths: paths, maximumFileSizeBytes: 1_024, fileCount: 3)
         try await store.prepare(workspaceID: workspaceID, serviceID: serviceID)
