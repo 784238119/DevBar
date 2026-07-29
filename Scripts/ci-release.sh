@@ -29,7 +29,6 @@ hdiutil create -volname "DevBar $version" -srcfolder "$stage" -format UDZO -ov "
 xcrun notarytool submit "$dmg" --wait --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD"
 xcrun stapler staple "$dmg"
 
-[[ "${DEVBAR_SKIP_APPCAST:-0}" = 1 ]] && exit 0
 tool="$derived/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_appcast"
 [[ -x "$tool" ]] || { print -u2 'Sparkle generate_appcast not found'; exit 1; }
 ditto "$dmg" "$appcast_stage/${dmg:t}"
