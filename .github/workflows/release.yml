@@ -64,7 +64,7 @@ jobs:
           git add appcast.xml
           if ! git diff --cached --quiet; then
             git commit -m "chore: publish appcast for v${version}"
-            git push --force origin "HEAD:${branch}"
+            git push --force origin "HEAD:refs/heads/${branch}"
             if [[ "$(gh pr list --base main --head "${branch}" --state open --json number --jq 'length')" == "0" ]]; then
               gh pr create \
                 --base main \
