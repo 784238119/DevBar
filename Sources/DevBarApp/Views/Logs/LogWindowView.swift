@@ -237,20 +237,32 @@ private struct TerminalOutputView: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let textView = NSTextView()
+        let scrollView = NSScrollView()
+        let textView = NSTextView(frame: scrollView.contentView.bounds)
         textView.isEditable = false
         textView.isSelectable = true
         textView.isRichText = false
         textView.allowsUndo = false
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.minSize = NSSize(width: 0, height: scrollView.contentSize.height)
+        textView.maxSize = NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        textView.autoresizingMask = [.width]
         textView.backgroundColor = NSColor(LogTerminalTheme.background)
         textView.textColor = NSColor(LogTerminalTheme.text)
         textView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
         textView.textContainerInset = NSSize(width: 14, height: 12)
+        textView.textContainer?.containerSize = NSSize(
+            width: scrollView.contentSize.width,
+            height: CGFloat.greatestFiniteMagnitude
+        )
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.lineFragmentPadding = 0
         textView.layoutManager?.allowsNonContiguousLayout = true
 
-        let scrollView = NSScrollView()
         scrollView.documentView = textView
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
