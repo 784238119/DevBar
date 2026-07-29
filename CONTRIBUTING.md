@@ -19,14 +19,16 @@
    ```
 
 2. 功能、修复及对应测试提交到当前 `dev-<版本号>`。
-3. 验证测试、Release 构建、DMG 和 Sparkle appcast。
+3. 验证测试通过。
 4. 从 `dev-<版本号>` 向 `main` 创建 Pull Request。
 5. 解决所有审查讨论后，使用 merge commit 合并；不要直接推送 `main`。
-6. 以合并后的 `main` 提交创建版本 tag 和 GitHub Release。
-7. 发布完成后，从最新 `main` 创建下一个 `dev-<版本号>` 分支。
+6. 在 GitHub Actions 中手动运行 `Release`，输入不带 `v` 的版本号。CI 从 `main` 构建、签名并上传 GitHub Release，然后自动创建 appcast Pull Request。
+7. 合并 appcast Pull Request 后，新版本才会出现在客户端更新列表中。
+8. 发布完成后，从最新 `main` 创建下一个 `dev-<版本号>` 分支。
 
 ## 发布边界
 
-- 未通过测试或没有可下载 DMG 的版本不得合并到 `main`。
+- 未通过测试的版本不得合并到 `main`。
 - appcast 中的新版本必须在对应 GitHub Release 资产可下载后才对外生效。
+- 已存在的版本号不得覆盖发布资产；需要修复时发布新的补丁版本。
 - Sparkle 私钥只保存在安全的钥匙串或 CI Secret 中，禁止提交到仓库。
