@@ -101,7 +101,11 @@ UI 测试依赖 macOS Accessibility/XCTest UI 会话，必须在已登录的图�
 ./Scripts/package-release.sh
 ```
 
-脚本会执行 Release 构建、校验 app 与内嵌 `DevBarRunner`、验证 ad-hoc 签名，并在 `dist/` 生成 ZIP 和 SHA-256 文件。
+脚本会执行 Release 构建、校验 app 与内嵌 `DevBarRunner`、验证 ad-hoc 签名，并在 `dist/` 生成：
+
+- 面向普通用户安装的 DMG，其中包含 `DevBar.app` 和“Applications”快捷方式；
+- 便于自动化分发的 ZIP；
+- 两种产物各自的 SHA-256 文件。
 
 正式对外分发前仍需：
 

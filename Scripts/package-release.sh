@@ -12,7 +12,15 @@ app_path="${derived_data}/Build/Products/Release/DevBar.app"
 runner_path="${app_path}/Contents/Helpers/DevBarRunner"
 dist_dir="${project_root}/dist"
 archive_path="${dist_dir}/DevBar-${version}-macos-${architecture}.zip"
-checksum_path="${archive_path}.sha256"
+archive_checksum_path="${archive_path}.sha256"
+dmg_path="${dist_dir}/DevBar-${version}-macos-${architecture}.dmg"
+dmg_checksum_path="${dmg_path}.sha256"
+staging_dir=$(mktemp -d "${TMPDIR:-/tmp}/DevBar-DMG.XXXXXX")
+
+cleanup() {
+  rm -rf "${staging_dir}"
+}
+trap cleanup EXIT
 
 mkdir -p "${dist_dir}"
 
@@ -38,13 +46,30 @@ xcodebuild \
 
 /usr/bin/codesign --verify --deep --strict --verbose=2 "${app_path}"
 
-rm -f "${archive_path}" "${checksum_path}"
+rm -f \
+  "${archive_path}" \
+  "${archive_checksum_path}" \
+  "${dmg_path}" \
+  "${dmg_checksum_path}"
 /usr/bin/ditto -c -k --sequesterRsrc --keepParent "${app_path}" "${archive_path}"
+
+/usr/bin/ditto "${app_path}" "${staging_dir}/DevBar.app"
+ln -s /Applications "${staging_dir}/Applications"
+/usr/bin/hdiutil create \
+  -volname "DevBar ${version}" \
+  -srcfolder "${staging_dir}" \
+  -format UDZO \
+  -imagekey zlib-level=9 \
+  -ov \
+  "${dmg_path}"
 
 (
   cd "${dist_dir}"
-  /usr/bin/shasum -a 256 "${archive_path:t}" > "${checksum_path:t}"
+  /usr/bin/shasum -a 256 "${archive_path:t}" > "${archive_checksum_path:t}"
+  /usr/bin/shasum -a 256 "${dmg_path:t}" > "${dmg_checksum_path:t}"
 )
 
 print "Created ${archive_path}"
-print "Created ${checksum_path}"
+print "Created ${archive_checksum_path}"
+print "Created ${dmg_path}"
+print "Created ${dmg_checksum_path}"
