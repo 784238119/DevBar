@@ -112,8 +112,13 @@ private struct WorkspaceSettingsContent: View {
             } label: {
                 Image(systemName: "ellipsis.circle")
                     .font(.system(size: 18))
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .accessibilityLabel("工作区操作")
         }
     }
 
