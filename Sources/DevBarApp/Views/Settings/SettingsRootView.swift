@@ -55,9 +55,7 @@ struct SettingsRootView: View {
                         viewModel.selectWorkspace(workspace.id)
                     } label: {
                         HStack(spacing: 10) {
-                            Text(String(workspace.name.prefix(1)).uppercased())
-                                .font(.system(size: 15, weight: .bold, design: .rounded))
-                                .foregroundStyle(.white)
+                            WorkspaceIconContent(workspace: workspace, fontSize: 15, fontWeight: .bold)
                                 .frame(width: 32, height: 32)
                                 .background(Color(devBarHex: workspace.tintHex), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                             Text(workspace.name)

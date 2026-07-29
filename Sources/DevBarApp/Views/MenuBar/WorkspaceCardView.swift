@@ -49,9 +49,7 @@ struct WorkspaceCardView: View {
                     withAnimation(.snappy(duration: 0.22)) { isExpanded.toggle() }
                 } label: {
                     HStack(spacing: 10) {
-                        Text(String(workspace.name.prefix(1)).uppercased())
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(.white)
+                        WorkspaceIconContent(workspace: workspace, fontSize: 16, fontWeight: .semibold)
                             .frame(width: 38, height: 38)
                             .background(
                                 LinearGradient(

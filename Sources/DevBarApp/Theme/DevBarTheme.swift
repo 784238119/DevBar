@@ -1,4 +1,5 @@
 import AppKit
+import DevBarCore
 import SwiftUI
 
 enum DevBarTheme {
@@ -87,6 +88,26 @@ struct DevBarIcon: View {
             .resizable()
             .interpolation(.high)
             .frame(width: size, height: size)
+    }
+}
+
+struct WorkspaceIconContent: View {
+    let workspace: WorkspaceConfig
+    let fontSize: CGFloat
+    let fontWeight: Font.Weight
+
+    var body: some View {
+        Group {
+            if workspace.iconSymbol.isEmpty {
+                Text(String(workspace.name.prefix(1)).uppercased())
+                    .font(.system(size: fontSize, weight: fontWeight, design: .rounded))
+            } else {
+                Image(systemName: workspace.iconSymbol)
+                    .font(.system(size: fontSize, weight: fontWeight))
+            }
+        }
+        .foregroundStyle(.white)
+        .accessibilityHidden(true)
     }
 }
 

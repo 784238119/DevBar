@@ -81,6 +81,17 @@ final class ConfigValidatorTests: XCTestCase {
         XCTAssertTrue(ConfigValidator(fileManager: .default).validate(validConfig()).isEmpty)
     }
 
+    func testWorkspaceMayUseInitialInsteadOfIcon() {
+        var config = validConfig()
+        config.workspaces[0].iconSymbol = ""
+
+        XCTAssertFalse(
+            ConfigValidator(fileManager: .default)
+                .validate(config)
+                .contains(where: { $0.code == .invalidIconSymbol })
+        )
+    }
+
     func testEverySelectableTintIsValid() {
         for tint in ConfigValidator.selectableTintHexes {
             var config = validConfig()

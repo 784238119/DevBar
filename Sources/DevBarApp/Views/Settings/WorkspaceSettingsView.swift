@@ -48,9 +48,7 @@ private struct WorkspaceSettingsContent: View {
 
     private var header: some View {
         HStack(spacing: 14) {
-            Text(String(workspace.name.prefix(1)).uppercased())
-                .font(.system(size: 24, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
+            WorkspaceIconContent(workspace: workspace, fontSize: 24, fontWeight: .bold)
                 .frame(width: 52, height: 52)
                 .background(
                     LinearGradient(
@@ -146,6 +144,8 @@ private struct WorkspaceSettingsContent: View {
                     }
 
                     Picker("图标", selection: $workspace.iconSymbol) {
+                        Label("不使用图标（显示首字）", systemImage: "character")
+                            .tag("")
                         ForEach(Array(ConfigValidator.allowedIconSymbols).sorted(), id: \.self) { symbol in
                             Label(symbol, systemImage: symbol).tag(symbol)
                         }

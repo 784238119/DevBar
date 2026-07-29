@@ -109,7 +109,8 @@ public struct ConfigValidator {
         if !isStandardAbsoluteDirectory(workspace.rootDirectory) {
             issues.append(.init(path: "\(path).rootDirectory", code: .invalidRootDirectory, message: "Workspace root must be an existing standardized absolute directory."))
         }
-        if !Self.allowedIconSymbols.contains(workspace.iconSymbol) {
+        if !workspace.iconSymbol.isEmpty,
+           !Self.allowedIconSymbols.contains(workspace.iconSymbol) {
             issues.append(.init(path: "\(path).iconSymbol", code: .invalidIconSymbol, message: "Choose an icon from DevBar's approved SF Symbols."))
         }
         if !Self.allowedTintHexes.contains(workspace.tintHex.uppercased()) {
