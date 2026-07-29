@@ -1,0 +1,46 @@
+name: Sync Release Version
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Version branch to update (for example dev-0.2.4)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-release-version-${{ github.event_name == 'workflow_dispatch' && inputs.branch || github.event.pull_request.head.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sync-version:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'dev-'))
+    runs-on: macos-15
+    env:
+      TARGET_BRANCH: ${{ github.event_name == 'workflow_dispatch' && inputs.branch || github.event.pull_request.head.ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+      - name: Sync Info.plist version from branch
+        run: ./Scripts/sync-version-from-branch.sh "$TARGET_BRANCH"
+      - name: Commit version update
+        run: |
+          if git diff --quiet -- Configuration/DevBar-Info.plist; then
+            exit 0
+          fi
+          version="${TARGET_BRANCH#dev-}"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add Configuration/DevBar-Info.plist
+          git commit -m "chore: prepare version ${version}"
+          git push origin "HEAD:${TARGET_BRANCH}"
