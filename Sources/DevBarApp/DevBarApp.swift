@@ -259,6 +259,7 @@ private struct SettingsSceneContent: View {
                     .background(DevBarTheme.background)
             }
         }
+        .background(MainWindowChromeConfigurator())
         .devBarAppearance(presentationPreferences.appearance)
         .task { installStatusItem?() }
         .task {
@@ -284,6 +285,35 @@ private struct SettingsSceneContent: View {
         }
         if viewModel == nil {
             viewModel = dependencies.makeSettingsViewModel()
+        }
+    }
+}
+
+/// Configures the AppKit-owned titlebar after SwiftUI has attached the main
+/// content view to its real window. The root view's safe-area background can
+/// then paint behind the traffic lights instead of leaving AppKit's gray
+/// titlebar material visible.
+private struct MainWindowChromeConfigurator: NSViewRepresentable {
+    func makeNSView(context: Context) -> WindowAttachmentView {
+        WindowAttachmentView()
+    }
+
+    func updateNSView(_ nsView: WindowAttachmentView, context: Context) {
+        nsView.configureWindow()
+    }
+
+    final class WindowAttachmentView: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            configureWindow()
+        }
+
+        func configureWindow() {
+            guard let window else { return }
+            window.titleVisibility = .hidden
+            window.titlebarAppearsTransparent = true
+            window.titlebarSeparatorStyle = .none
+            window.styleMask.insert(.fullSizeContentView)
         }
     }
 }

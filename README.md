@@ -4,6 +4,24 @@ DevBar 是一个 macOS 菜单栏开发服务管理器。它把多个本地项目
 
 > 当前版本为早期本地发布版：最低支持 macOS 15，产物使用 ad-hoc 签名，未经过 Apple Developer ID 签名和公证。
 
+## 界面预览
+
+> 以下图片用于展示 DevBar 的主要使用方式，具体文案和控件细节以当前版本为准。
+
+### 集中配置工作区与服务
+
+![DevBar 工作区与服务配置界面](docs/superpowers/specs/assets/devbar-settings-warm-prism-v2.png)
+
+在主窗口中统一维护工作区、服务启动命令、健康检查和环境变量，并决定哪些服务参与“启动全部”。
+
+### 从菜单栏快速控制服务
+
+<p align="center">
+  <img src="docs/superpowers/specs/assets/devbar-menubar-warm-prism.png" alt="DevBar 菜单栏服务控制界面" width="520">
+</p>
+
+无需反复切换终端，即可从菜单栏查看服务状态、启动或停止单个服务，并快速进入主窗口。
+
 ## 适合解决什么问题
 
 - 每次开始编码前，需要在多个终端中重复进入目录并执行启动命令。
