@@ -86,6 +86,7 @@ struct WorkspaceCardView: View {
                     .clipShape(RoundedRectangle(cornerRadius: DevBarTheme.controlRadius, style: .continuous))
                     .buttonStyle(DevBarPressButtonStyle())
                     .accessibilityIdentifier("workspace.startAll.\(workspace.id.uuidString)")
+                    .animation(reduceMotion ? nil : DevBarTheme.stateAnimation, value: allStopped)
                 } else {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 15, weight: .semibold))
@@ -124,7 +125,6 @@ struct WorkspaceCardView: View {
                 .stroke(DevBarTheme.separator.opacity(0.48), lineWidth: 0.75)
         )
         .shadow(color: DevBarTheme.surfaceShadow.opacity(0.72), radius: 16, y: 7)
-        .animation(reduceMotion ? nil : DevBarTheme.stateAnimation, value: activeCount)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("workspace.\(workspace.id.uuidString)")
     }

@@ -22,7 +22,7 @@ struct LogWindowView: View {
             idealHeight: 600,
             maxHeight: .infinity
         )
-        .background(background)
+        .background(background.ignoresSafeArea())
         .foregroundStyle(DevBarTheme.textPrimary)
         .task { await viewModel.start() }
         .confirmationDialog(
@@ -274,18 +274,18 @@ private struct TerminalOutputView: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? NSTextView else { return }
-        let output = entries.map(\.text).joined()
-        guard output != context.coordinator.output else { return }
+        guard entries != context.coordinator.entries else { return }
 
         let wasAtBottom = isAtBottom(scrollView)
         let storage = textView.textStorage ?? NSTextStorage()
-        if output.hasPrefix(context.coordinator.output) {
-            let suffix = String(output.dropFirst(context.coordinator.output.count))
+        if entries.starts(with: context.coordinator.entries) {
+            let suffix = entries.dropFirst(context.coordinator.entries.count).map(\.text).joined()
             storage.append(attributedTerminalText(suffix))
         } else {
+            let output = entries.map(\.text).joined()
             storage.setAttributedString(attributedTerminalText(output))
         }
-        context.coordinator.output = output
+        context.coordinator.entries = entries
 
         if followsOutput && wasAtBottom {
             textView.scrollRangeToVisible(NSRange(location: storage.length, length: 0))
@@ -308,7 +308,7 @@ private struct TerminalOutputView: NSViewRepresentable {
     }
 
     final class Coordinator {
-        var output = ""
+        var entries: [LogEntry] = []
     }
 }
 

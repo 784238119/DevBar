@@ -129,7 +129,7 @@ struct MenuBarPanel: View {
                     .foregroundStyle(DevBarTheme.textSecondary)
             }
             .padding(.horizontal, 12)
-            .frame(height: 36)
+            .frame(width: 172, height: 36, alignment: .leading)
             .background(DevBarTheme.surfaceStrong, in: Capsule())
             .overlay(
                 Capsule()
