@@ -115,13 +115,14 @@ private struct ProductionMenuContent: View {
 }
 
 @MainActor
-private final class StatusItemController: NSObject {
+private final class StatusItemController: NSObject, NSPopoverDelegate {
     private let appState: AppState
     private let presentationPreferences: AppPresentationPreferences
     private let mainWindowCoordinator: MainWindowCoordinator
     private let menuContent: () -> AnyView
-    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let popover = NSPopover()
+    private var deferredStatusImage: AppAggregateStatus?
 
     init(
         appState: AppState,
@@ -145,6 +146,7 @@ private final class StatusItemController: NSObject {
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         button.toolTip = "DevBar"
         popover.behavior = .transient
+        popover.delegate = self
     }
 
     private func observePresentation() {
@@ -159,10 +161,20 @@ private final class StatusItemController: NSObject {
     }
 
     private func setStatusImage(for status: AppAggregateStatus) {
+        guard !popover.isShown else {
+            deferredStatusImage = status
+            return
+        }
         statusItem.button?.image = NSImage(
             systemSymbolName: statusItemSymbol(for: status),
             accessibilityDescription: "DevBar"
         )
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        guard let status = deferredStatusImage else { return }
+        deferredStatusImage = nil
+        setStatusImage(for: status)
     }
 
     @objc private func handleStatusItemClick() {
@@ -259,7 +271,7 @@ private struct SettingsSceneContent: View {
                     .background(DevBarTheme.background)
             }
         }
-        .background(MainWindowChromeConfigurator())
+        .background(WindowChromeConfigurator())
         .devBarAppearance(presentationPreferences.appearance)
         .task { installStatusItem?() }
         .task {
@@ -289,11 +301,11 @@ private struct SettingsSceneContent: View {
     }
 }
 
-/// Configures the AppKit-owned titlebar after SwiftUI has attached the main
+/// Configures the AppKit-owned titlebar after SwiftUI has attached the scene
 /// content view to its real window. The root view's safe-area background can
 /// then paint behind the traffic lights instead of leaving AppKit's gray
 /// titlebar material visible.
-private struct MainWindowChromeConfigurator: NSViewRepresentable {
+private struct WindowChromeConfigurator: NSViewRepresentable {
     func makeNSView(context: Context) -> WindowAttachmentView {
         WindowAttachmentView()
     }
@@ -334,17 +346,20 @@ private struct LogSceneContent: View {
                     .background(DevBarTheme.background)
             }
         }
+        .background(WindowChromeConfigurator())
         .devBarAppearance(presentationPreferences.appearance)
         .onChange(of: dependencies.logWindowSelection.serviceID) { _, serviceID in
             guard dependencies.appState.isConfigurationReady else { return }
-            viewModel = dependencies.makeLogViewModel(selectedServiceID: serviceID)
+            updateSelection(to: serviceID)
         }
         .task {
             while !dependencies.appState.isConfigurationReady {
                 guard !Task.isCancelled else { return }
                 try? await Task.sleep(for: .milliseconds(20))
             }
-            if viewModel == nil {
+            if let viewModel {
+                await viewModel.selectService(dependencies.logWindowSelection.serviceID)
+            } else {
                 viewModel = dependencies.makeLogViewModel(
                     selectedServiceID: dependencies.logWindowSelection.serviceID
                 )
@@ -352,9 +367,15 @@ private struct LogSceneContent: View {
         }
         .onAppear {
             guard dependencies.appState.isConfigurationReady else { return }
-            viewModel = dependencies.makeLogViewModel(
-                selectedServiceID: dependencies.logWindowSelection.serviceID
-            )
+            updateSelection(to: dependencies.logWindowSelection.serviceID)
+        }
+    }
+
+    private func updateSelection(to serviceID: UUID?) {
+        if let viewModel {
+            Task { await viewModel.selectService(serviceID) }
+        } else {
+            viewModel = dependencies.makeLogViewModel(selectedServiceID: serviceID)
         }
     }
 }

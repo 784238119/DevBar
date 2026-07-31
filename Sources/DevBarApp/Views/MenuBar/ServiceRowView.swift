@@ -98,6 +98,7 @@ struct ServiceRowView: View {
                     .foregroundStyle(DevBarTheme.textSecondary)
                     .contentTransition(.opacity)
             }
+            .animation(reduceMotion ? nil : DevBarTheme.stateAnimation, value: stateAnimationKey)
 
             Button(action: openLogs) {
                 Image(systemName: "doc.text")
@@ -125,8 +126,8 @@ struct ServiceRowView: View {
             .overlay(Circle().stroke(DevBarTheme.separator.opacity(0.9), lineWidth: 1))
             .accessibilityLabel(isActive ? "停止 \(service.name)" : "启动 \(service.name)")
             .accessibilityIdentifier("service.toggle.\(service.id.uuidString)")
+            .animation(reduceMotion ? nil : DevBarTheme.stateAnimation, value: stateAnimationKey)
         }
         .padding(.vertical, 11)
-        .animation(reduceMotion ? nil : DevBarTheme.stateAnimation, value: stateAnimationKey)
     }
 }
