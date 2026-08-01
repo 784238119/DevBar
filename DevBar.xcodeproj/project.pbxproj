@@ -54,6 +54,7 @@
 		8BB80BB65133674545ADD6A6 /* ShellSyntaxChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0A2FBF7FE3CDB5F8C13F62B /* ShellSyntaxChecker.swift */; };
 		8F8B2C65EB138E012E2BEA16 /* ProjectSmokeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36E17D2A4ADDAE106A1D2C77 /* ProjectSmokeUITests.swift */; };
 		9048B985E590D4AB8DBE53C6 /* HealthCheckerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 738BBE57838F67657D83B410 /* HealthCheckerTests.swift */; };
+		917B11C79C61E167B59D8275 /* WorkspaceDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4F915EED85509F5AF7A0B52 /* WorkspaceDetector.swift */; };
 		91A73DD867F8F36C7E7BA10F /* QuitCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F1EF8EA52B3119F412542D9 /* QuitCoordinator.swift */; };
 		92BE24629855C8B3819558F7 /* ServiceEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B93116A39BB24C372223C1F8 /* ServiceEditorSheet.swift */; };
 		93CB952DF4AE0E396DD1D7C0 /* SettingsComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11477E655A5C4FC4F047347 /* SettingsComponents.swift */; };
@@ -69,6 +70,7 @@
 		A1B68B158E837E79C4323BB6 /* ServiceState.swift in Sources */ = {isa = PBXBuildFile; fileRef = D818B837EE7C1B46B58C8F92 /* ServiceState.swift */; };
 		A7C039F0260079278DBE85C3 /* EnvironmentMerger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 683C94DE613DF4A1445E80AC /* EnvironmentMerger.swift */; };
 		AA62D2C1B6B507684F34BD90 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DFE3776339A5CE2B725D0A0 /* AppConfig.swift */; };
+		AF5A6914C881EBCA6D363EA4 /* WorkspaceImportSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4F827B1DC757E40081861C6 /* WorkspaceImportSheet.swift */; };
 		B069043B4F736192B620D39E /* ShellEnvironmentProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B85E156AE10E301A2D54456 /* ShellEnvironmentProviderTests.swift */; };
 		B0FC5225288C79152E63A08A /* AppPaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DF9CF011CC9829F89131D4A /* AppPaths.swift */; };
 		B14DC92D9FB2DCB0B3866E51 /* ProcessGroupTerminator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B84087B29A5D83F50A8BBF5A /* ProcessGroupTerminator.swift */; };
@@ -80,6 +82,7 @@
 		D52BBFB322C03693DF3904D6 /* LogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 691E0BFC4F8768A031AA87A2 /* LogStore.swift */; };
 		D9133A289A9D96CE794BC313 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BD018AA036645B52748D8BCC /* Assets.xcassets */; };
 		DA4D812F4A4C4A02BBFE5BCA /* AppPresentationPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 405644867E47B50CC512CCD6 /* AppPresentationPreferences.swift */; };
+		DEC58166DDB31726FB749E48 /* WorkspaceDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A7AF3B3D886ABF7025C03B /* WorkspaceDetectorTests.swift */; };
 		E0894AB49E049AC6222F2D52 /* AppDependencies.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CB9FAEB49C904CECFC86717 /* AppDependencies.swift */; };
 		E2E54CEC28BDF0181B9B7B82 /* SettingsBehaviorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B6C2E4759E18E3341CAAA64 /* SettingsBehaviorTests.swift */; };
 		E669DE7B11251EB64FB187E7 /* LogStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC1DE309AC25F25732BADB38 /* LogStoreTests.swift */; };
@@ -189,6 +192,7 @@
 		4559E0F6032BD2705A2D95D0 /* DeletionCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeletionCoordinatorTests.swift; sourceTree = "<group>"; };
 		48B7118F1A598843FE5FAC9D /* ServiceRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceRowView.swift; sourceTree = "<group>"; };
 		4B9E79E74E2A4AA587F081E9 /* WorkspaceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceSettingsView.swift; sourceTree = "<group>"; };
+		51A7AF3B3D886ABF7025C03B /* WorkspaceDetectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceDetectorTests.swift; sourceTree = "<group>"; };
 		57A400D267C91FBB2DE67B14 /* MainWindowCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowCoordinatorTests.swift; sourceTree = "<group>"; };
 		5AD3FAF549286D7220CA0A4E /* LogSanitizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogSanitizer.swift; sourceTree = "<group>"; };
 		5B49BC1ADB5D4673B03BF892 /* AppUpdateControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdateControllerTests.swift; sourceTree = "<group>"; };
@@ -216,7 +220,9 @@
 		9CCB99EC0E543565C95DB23D /* ProjectSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectSmokeTests.swift; sourceTree = "<group>"; };
 		9D1FD0286F6999E21E6C3362 /* RotatingLogWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RotatingLogWriter.swift; sourceTree = "<group>"; };
 		9EF5586388E8D5D318F1BE21 /* ConfigurationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationStore.swift; sourceTree = "<group>"; };
+		A4F915EED85509F5AF7A0B52 /* WorkspaceDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceDetector.swift; sourceTree = "<group>"; };
 		B4865D6FF1C88456C76D8259 /* libDevBarCore.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libDevBarCore.a; sourceTree = BUILT_PRODUCTS_DIR; };
+		B4F827B1DC757E40081861C6 /* WorkspaceImportSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceImportSheet.swift; sourceTree = "<group>"; };
 		B84087B29A5D83F50A8BBF5A /* ProcessGroupTerminator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessGroupTerminator.swift; sourceTree = "<group>"; };
 		B8E32012E35BA0D873974A08 /* ConfigValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigValidator.swift; sourceTree = "<group>"; };
 		B93116A39BB24C372223C1F8 /* ServiceEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceEditorSheet.swift; sourceTree = "<group>"; };
@@ -372,6 +378,7 @@
 				EDFDE0CA52DECD6F34002F7A /* RunnerClientIntegrationTests.swift */,
 				8B85E156AE10E301A2D54456 /* ShellEnvironmentProviderTests.swift */,
 				01C1627F13B885AD710A16F9 /* UTF8StreamDecoderTests.swift */,
+				51A7AF3B3D886ABF7025C03B /* WorkspaceDetectorTests.swift */,
 				99EB2ACC4C59BEA618A9CAFE /* ZshResolverTests.swift */,
 			);
 			name = DevBarCoreTests;
@@ -405,6 +412,7 @@
 				9EF5586388E8D5D318F1BE21 /* ConfigurationStore.swift */,
 				B8E32012E35BA0D873974A08 /* ConfigValidator.swift */,
 				6CBBBF8458BD94613AF75537 /* DeletionCoordinator.swift */,
+				A4F915EED85509F5AF7A0B52 /* WorkspaceDetector.swift */,
 			);
 			path = Configuration;
 			sourceTree = "<group>";
@@ -462,6 +470,7 @@
 				B93116A39BB24C372223C1F8 /* ServiceEditorSheet.swift */,
 				F11477E655A5C4FC4F047347 /* SettingsComponents.swift */,
 				CC93EE0FB423C635692B6373 /* SettingsRootView.swift */,
+				B4F827B1DC757E40081861C6 /* WorkspaceImportSheet.swift */,
 				4B9E79E74E2A4AA587F081E9 /* WorkspaceSettingsView.swift */,
 			);
 			path = Settings;
@@ -917,6 +926,7 @@
 				4BEB5C93F132FC8E411F4E88 /* SettingsRootView.swift in Sources */,
 				15F9B75860739733F29B5BD8 /* SettingsViewModel.swift in Sources */,
 				C59945D630D23E2F8FC43C71 /* WorkspaceCardView.swift in Sources */,
+				AF5A6914C881EBCA6D363EA4 /* WorkspaceImportSheet.swift in Sources */,
 				17CF5AE66F018698DC1DCF13 /* WorkspaceSettingsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -958,6 +968,7 @@
 				8BB80BB65133674545ADD6A6 /* ShellSyntaxChecker.swift in Sources */,
 				0627285E2D1EDCC728FF9CD2 /* Trashing.swift in Sources */,
 				98D19BF5940269B59BB73196 /* UTF8StreamDecoder.swift in Sources */,
+				917B11C79C61E167B59D8275 /* WorkspaceDetector.swift in Sources */,
 				2998AF6F09EC2424B702E42B /* ZshResolver.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1003,6 +1014,7 @@
 				976BDE9E3CB3BE6205307EA7 /* RunnerClientIntegrationTests.swift in Sources */,
 				B069043B4F736192B620D39E /* ShellEnvironmentProviderTests.swift in Sources */,
 				190FA05E411ACC124CB4C50A /* UTF8StreamDecoderTests.swift in Sources */,
+				DEC58166DDB31726FB749E48 /* WorkspaceDetectorTests.swift in Sources */,
 				7470408294DED4D08B72D594 /* ZshResolverTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

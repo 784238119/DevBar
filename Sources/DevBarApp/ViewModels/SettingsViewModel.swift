@@ -28,6 +28,13 @@ struct ServiceEditorDraft: Identifiable, Equatable {
     var service: ServiceConfig
 }
 
+struct WorkspaceImportDraft: Identifiable, Equatable {
+    let id = UUID()
+    var workspace: WorkspaceConfig
+    var candidates: [DetectedService]
+    var selectedCandidateIDs: Set<UUID>
+}
+
 enum SettingsNotice: Equatable {
     case checking
     case success(String)
@@ -46,6 +53,8 @@ final class SettingsViewModel {
     var selectedWorkspaceID: UUID?
     var showsPreferences = false
     var serviceEditor: ServiceEditorDraft?
+    var workspaceImport: WorkspaceImportDraft?
+    private(set) var isDetectingWorkspace = false
     private(set) var issues: [ValidationIssue] = []
     private(set) var notice: SettingsNotice?
     private(set) var refreshedShellPath: String?
@@ -56,6 +65,7 @@ final class SettingsViewModel {
     private let commitAction: CommitAction
     private let shellRefreshAction: ShellRefreshAction
     private let syntaxCheckAction: SyntaxCheckAction
+    private let workspaceDetector: any WorkspaceDetecting
     private let workspaceLocked: @MainActor (UUID) -> Bool
     private let logDirectoryLocked: @MainActor () -> Bool
     @ObservationIgnored private var configurationEventGeneration: UInt64 = 0
@@ -69,7 +79,8 @@ final class SettingsViewModel {
         logDirectoryLocked: @escaping @MainActor () -> Bool = { false },
         commit: @escaping CommitAction,
         refreshShell: @escaping ShellRefreshAction,
-        checkSyntax: SyntaxCheckAction? = nil
+        checkSyntax: SyntaxCheckAction? = nil,
+        workspaceDetector: any WorkspaceDetecting = WorkspaceDetector()
     ) {
         baseline = configuration
         draft = configuration
@@ -83,6 +94,7 @@ final class SettingsViewModel {
         syntaxCheckAction = checkSyntax ?? { zshPath, command in
             await ShellSyntaxChecker(zshPath: zshPath.isEmpty ? "/bin/zsh" : zshPath).check(command: command)
         }
+        self.workspaceDetector = workspaceDetector
     }
 
     var hasUnsavedChanges: Bool { draft != baseline }
@@ -152,17 +164,41 @@ final class SettingsViewModel {
 
     func addWorkspace() async {
         guard let directory = await directoryPicker.chooseDirectory() else { return }
+        isDetectingWorkspace = true
+        defer { isDetectingWorkspace = false }
+        let result = await workspaceDetector.detect(in: directory)
         let workspace = WorkspaceConfig(
             name: directory.lastPathComponent,
-            rootDirectory: directory.standardizedFileURL.path,
+            rootDirectory: result.rootDirectory,
             iconSymbol: "terminal.fill",
             tintHex: "#FF7A59",
             environment: [],
             services: []
         )
+        workspaceImport = WorkspaceImportDraft(
+            workspace: workspace,
+            candidates: result.services,
+            selectedCandidateIDs: Set(result.services.map(\.id))
+        )
+    }
+
+    func cancelWorkspaceImport() {
+        workspaceImport = nil
+    }
+
+    @discardableResult
+    func confirmWorkspaceImport(_ importDraft: WorkspaceImportDraft) async -> Bool {
+        var workspace = importDraft.workspace
+        workspace.services = importDraft.candidates
+            .filter { importDraft.selectedCandidateIDs.contains($0.id) }
+            .map(\.service)
         draft.workspaces.append(workspace)
         selectWorkspace(workspace.id)
-        await commitWorkspace(workspace.id)
+        let committed = await commitWorkspace(workspace.id)
+        if committed {
+            workspaceImport = nil
+        }
+        return committed
     }
 
     func updateWorkspace(_ workspace: WorkspaceConfig) async {

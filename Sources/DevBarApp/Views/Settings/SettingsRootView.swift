@@ -38,6 +38,11 @@ struct SettingsRootView: View {
                 )
             }
         }
+        .sheet(item: $viewModel.workspaceImport, onDismiss: {
+            viewModel.cancelWorkspaceImport()
+        }) { importDraft in
+            WorkspaceImportSheet(viewModel: viewModel, importDraft: importDraft)
+        }
     }
 
     private var sidebar: some View {
@@ -110,7 +115,10 @@ struct SettingsRootView: View {
             Button {
                 Task { await viewModel.addWorkspace() }
             } label: {
-                Label("添加工作区", systemImage: "plus.circle")
+                Label(
+                    viewModel.isDetectingWorkspace ? "正在识别…" : "添加工作区",
+                    systemImage: viewModel.isDetectingWorkspace ? "magnifyingglass" : "plus.circle"
+                )
                     .font(.system(size: 13, weight: .semibold))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 20)
@@ -120,6 +128,7 @@ struct SettingsRootView: View {
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
             .buttonStyle(.plain)
+            .disabled(viewModel.isDetectingWorkspace)
             .accessibilityIdentifier("workspace.add")
 
             Spacer()
@@ -166,8 +175,11 @@ struct SettingsRootView: View {
             Text("选择一个项目目录，再添加 npm、Java 或其他前台启动命令。")
                 .font(.system(size: 12))
                 .foregroundStyle(DevBarTheme.textSecondary)
-            Button("选择目录") { Task { await viewModel.addWorkspace() } }
+            Button(viewModel.isDetectingWorkspace ? "正在识别…" : "选择目录") {
+                Task { await viewModel.addWorkspace() }
+            }
                 .buttonStyle(SettingsGradientButtonStyle())
+                .disabled(viewModel.isDetectingWorkspace)
         }
     }
 

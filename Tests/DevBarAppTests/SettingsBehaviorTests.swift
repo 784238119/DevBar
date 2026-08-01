@@ -225,6 +225,89 @@ final class SettingsBehaviorTests: XCTestCase {
         XCTAssertEqual(statusItemSymbol(for: .error), "exclamationmark.triangle.fill")
     }
 
+    func testAddingWorkspaceWaitsForImportConfirmationBeforeCommit() async throws {
+        let detected = DetectedService(
+            service: makeService(command: "npm run dev"),
+            source: "package.json"
+        )
+        var commitCount = 0
+        var configuration = AppConfig(workspaces: [], preferences: .default)
+        let viewModel = SettingsViewModel(
+            configuration: configuration,
+            directoryPicker: FixedDirectoryPicker(url: URL(fileURLWithPath: "/tmp")),
+            commit: { event in
+                commitCount += 1
+                configuration = self.apply(event, to: configuration)
+                return configuration
+            },
+            refreshShell: { _ in },
+            workspaceDetector: FixedWorkspaceDetector(
+                result: WorkspaceDetectionResult(rootDirectory: "/tmp", services: [detected])
+            )
+        )
+
+        await viewModel.addWorkspace()
+
+        XCTAssertEqual(commitCount, 0)
+        XCTAssertTrue(viewModel.draft.workspaces.isEmpty)
+        let importDraft = try XCTUnwrap(viewModel.workspaceImport)
+        XCTAssertEqual(importDraft.candidates.map(\.source), ["package.json"])
+
+        let committed = await viewModel.confirmWorkspaceImport(importDraft)
+
+        XCTAssertTrue(committed)
+        XCTAssertEqual(commitCount, 1)
+        XCTAssertEqual(viewModel.draft.workspaces.first?.services.map(\.command), ["npm run dev"])
+        XCTAssertNil(viewModel.workspaceImport)
+    }
+
+    func testImportPersistsOnlySelectedCandidates() async throws {
+        let first = DetectedService(service: makeService(command: "npm run dev"), source: "package.json")
+        let second = DetectedService(service: makeService(command: "mvn spring-boot:run"), source: "api/pom.xml")
+        let viewModel = makeViewModel(workspaces: [])
+        var importDraft = WorkspaceImportDraft(
+            workspace: makeWorkspace(),
+            candidates: [first, second],
+            selectedCandidateIDs: [second.id]
+        )
+        importDraft.candidates[1].service.name = "API"
+
+        let committed = await viewModel.confirmWorkspaceImport(importDraft)
+
+        XCTAssertTrue(committed)
+        XCTAssertEqual(viewModel.draft.workspaces[0].services.map(\.name), ["API"])
+        XCTAssertEqual(viewModel.draft.workspaces[0].services.map(\.command), ["mvn spring-boot:run"])
+    }
+
+    func testInvalidSelectedCandidateDoesNotCommitOrCloseImport() async throws {
+        let candidate = DetectedService(service: makeService(command: "npm run dev"), source: "package.json")
+        let original = AppConfig(workspaces: [], preferences: .default)
+        let viewModel = SettingsViewModel(
+            configuration: original,
+            commit: { _ in
+                XCTFail("Invalid import must not reach persistence.")
+                return original
+            },
+            refreshShell: { _ in }
+        )
+        var importDraft = WorkspaceImportDraft(
+            workspace: makeWorkspace(),
+            candidates: [candidate],
+            selectedCandidateIDs: [candidate.id]
+        )
+        importDraft.candidates[0].service.command = ""
+        viewModel.workspaceImport = importDraft
+
+        let committed = await viewModel.confirmWorkspaceImport(importDraft)
+
+        XCTAssertFalse(committed)
+        XCTAssertTrue(viewModel.draft.workspaces.isEmpty)
+        XCTAssertNotNil(viewModel.workspaceImport)
+        guard case .failure = viewModel.notice else {
+            return XCTFail("Expected an import validation failure notice.")
+        }
+    }
+
     private func makeViewModel(workspaces: [WorkspaceConfig]) -> SettingsViewModel {
         var configuration = AppConfig(workspaces: workspaces, preferences: .default)
         return SettingsViewModel(
@@ -279,4 +362,17 @@ final class SettingsBehaviorTests: XCTestCase {
 
 private enum SettingsTestError: Error {
     case persistence
+}
+
+@MainActor
+private struct FixedDirectoryPicker: DirectoryPicking {
+    let url: URL?
+
+    func chooseDirectory() async -> URL? { url }
+}
+
+private struct FixedWorkspaceDetector: WorkspaceDetecting {
+    let result: WorkspaceDetectionResult
+
+    func detect(in rootDirectory: URL) async -> WorkspaceDetectionResult { result }
 }
