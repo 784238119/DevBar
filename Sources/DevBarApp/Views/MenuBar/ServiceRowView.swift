@@ -28,13 +28,6 @@ struct ServiceRowView: View {
         }
     }
 
-    private var isTransitioning: Bool {
-        switch state {
-        case .starting, .stopping: true
-        case .stopped, .running, .ready, .unready, .failed: false
-        }
-    }
-
     private var stateAnimationKey: String {
         switch state {
         case .stopped: "stopped"
@@ -80,19 +73,10 @@ struct ServiceRowView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             HStack(spacing: 6) {
-                if isTransitioning {
-                    ProgressView()
-                        .controlSize(.mini)
-                        .tint(presentation.color)
-                        .frame(width: 12, height: 12)
-                        .transition(.scale.combined(with: .opacity))
-                } else {
-                    Circle()
-                        .fill(presentation.color)
-                        .frame(width: 7, height: 7)
-                        .frame(width: 12, height: 12)
-                        .transition(.scale.combined(with: .opacity))
-                }
+                Circle()
+                    .fill(presentation.color)
+                    .frame(width: 7, height: 7)
+                    .frame(width: 12, height: 12)
                 Text(presentation.label)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(DevBarTheme.textSecondary)
