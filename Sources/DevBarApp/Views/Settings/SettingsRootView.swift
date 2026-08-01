@@ -24,6 +24,9 @@ struct SettingsRootView: View {
         }
         .frame(width: 980, height: 680)
         .background(background.ignoresSafeArea())
+        .containerBackground(for: .window) {
+            background
+        }
         .foregroundStyle(DevBarTheme.textPrimary)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("settings.root")
