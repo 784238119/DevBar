@@ -6,6 +6,16 @@
         <description>DevBar stable updates</description>
         <language>zh-CN</language>
         <item>
+            <title>0.2.11</title>
+            <pubDate>Tue, 04 Aug 2026 02:23:03 +0000</pubDate>
+            <link>https://github.com/784238119/DevBar/releases/tag/v0.2.11</link>
+            <sparkle:version>12</sparkle:version>
+            <sparkle:shortVersionString>0.2.11</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/784238119/DevBar/releases/download/v0.2.11/DevBar-0.2.11-macos-arm64.dmg" length="7145772" type="application/octet-stream" sparkle:edSignature="817UZoG7HEvbXyq0e6VAhRkgmWCVCLe3Zh9RUs9IMsAWtqn78aolYDKon0HdyFO1kg6urRH/MVajeiUqBiOsBQ=="/>
+        </item>
+        <item>
             <title>0.2.10</title>
             <pubDate>Sat, 01 Aug 2026 01:52:20 +0000</pubDate>
             <link>https://github.com/784238119/DevBar/releases/tag/v0.2.10</link>
@@ -24,16 +34,6 @@
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
             <enclosure url="https://github.com/784238119/DevBar/releases/download/v0.2.9/DevBar-0.2.9-macos-arm64.dmg" length="7155815" type="application/octet-stream" sparkle:edSignature="MkhPhW2oyLXPanVlhjfUo/ri+OYHiK2MkyfMZ07Jb79jQ1nZUhIGBti4FrJ9BjEeEmbEnSHu2Ul3hlO8WYZCDQ=="/>
-        </item>
-        <item>
-            <title>0.2.8</title>
-            <pubDate>Fri, 31 Jul 2026 10:31:14 +0000</pubDate>
-            <link>https://github.com/784238119/DevBar/releases/tag/v0.2.8</link>
-            <sparkle:version>9</sparkle:version>
-            <sparkle:shortVersionString>0.2.8</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/784238119/DevBar/releases/download/v0.2.8/DevBar-0.2.8-macos-arm64.dmg" length="7078704" type="application/octet-stream" sparkle:edSignature="biZaxorE1SEZ7B+90WKdP8/8hkkDOQoDjvDM5BLiI9Mh6OLUNcf/L82fdB0dCbBRgWGgU/N/MXf5yxyAnS+4BQ=="/>
         </item>
     </channel>
 </rss>
