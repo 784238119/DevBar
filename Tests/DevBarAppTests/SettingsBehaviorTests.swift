@@ -1,3 +1,4 @@
+import AppKit
 import DevBarCore
 import XCTest
 @testable import DevBar
@@ -223,6 +224,45 @@ final class SettingsBehaviorTests: XCTestCase {
         XCTAssertEqual(statusItemSymbol(for: .working), "hammer.fill")
         XCTAssertEqual(statusItemSymbol(for: .ready), "checkmark.circle.fill")
         XCTAssertEqual(statusItemSymbol(for: .error), "exclamationmark.triangle.fill")
+    }
+
+    func testPopoverDismissalKeepsClicksInsidePopover() {
+        let popoverFrame = NSRect(x: 100, y: 200, width: 300, height: 400)
+        let statusItemFrame = NSRect(x: 800, y: 900, width: 24, height: 24)
+
+        XCTAssertFalse(
+            shouldDismissPopover(
+                at: NSPoint(x: 250, y: 400),
+                popoverFrame: popoverFrame,
+                statusItemFrame: statusItemFrame
+            )
+        )
+    }
+
+    func testPopoverDismissalKeepsClicksOnStatusItem() {
+        let popoverFrame = NSRect(x: 100, y: 200, width: 300, height: 400)
+        let statusItemFrame = NSRect(x: 800, y: 900, width: 24, height: 24)
+
+        XCTAssertFalse(
+            shouldDismissPopover(
+                at: NSPoint(x: 812, y: 912),
+                popoverFrame: popoverFrame,
+                statusItemFrame: statusItemFrame
+            )
+        )
+    }
+
+    func testPopoverDismissalClosesForClicksOutsideBothRegions() {
+        let popoverFrame = NSRect(x: 100, y: 200, width: 300, height: 400)
+        let statusItemFrame = NSRect(x: 800, y: 900, width: 24, height: 24)
+
+        XCTAssertTrue(
+            shouldDismissPopover(
+                at: NSPoint(x: 500, y: 500),
+                popoverFrame: popoverFrame,
+                statusItemFrame: statusItemFrame
+            )
+        )
     }
 
     func testAddingWorkspaceWaitsForImportConfirmationBeforeCommit() async throws {
