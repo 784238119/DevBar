@@ -123,6 +123,8 @@ private final class StatusItemController: NSObject, NSPopoverDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let popover = NSPopover()
     private var deferredStatusImage: AppAggregateStatus?
+    private var localMouseMonitor: EventMonitorToken?
+    private var globalMouseMonitor: EventMonitorToken?
 
     init(
         appState: AppState,
@@ -172,6 +174,7 @@ private final class StatusItemController: NSObject, NSPopoverDelegate {
     }
 
     func popoverDidClose(_ notification: Notification) {
+        removeOutsideClickMonitors()
         guard let status = deferredStatusImage else { return }
         deferredStatusImage = nil
         setStatusImage(for: status)
@@ -189,11 +192,70 @@ private final class StatusItemController: NSObject, NSPopoverDelegate {
     private func togglePopover() {
         guard let button = statusItem.button else { return }
         if popover.isShown {
-            popover.performClose(nil)
+            closePopover()
             return
         }
         popover.contentViewController = NSHostingController(rootView: menuContent())
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        installOutsideClickMonitors()
+    }
+
+    private func installOutsideClickMonitors() {
+        removeOutsideClickMonitors()
+
+        let eventMask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown]
+        if let token = NSEvent.addLocalMonitorForEvents(matching: eventMask, handler: { [weak self] event in
+            self?.dismissPopoverIfNeeded()
+            return event
+        }) {
+            localMouseMonitor = EventMonitorToken(token)
+        }
+        if let token = NSEvent.addGlobalMonitorForEvents(matching: eventMask, handler: { [weak self] _ in
+            self?.dismissPopoverIfNeeded()
+        }) {
+            globalMouseMonitor = EventMonitorToken(token)
+        }
+    }
+
+    private func removeOutsideClickMonitors() {
+        localMouseMonitor = nil
+        globalMouseMonitor = nil
+    }
+
+    private func dismissPopoverIfNeeded() {
+        guard popover.isShown else {
+            removeOutsideClickMonitors()
+            return
+        }
+
+        let popoverFrame = popover.contentViewController?.view.window?.frame ?? .zero
+        let statusItemFrame = statusItemButtonFrameInScreen() ?? .zero
+        guard shouldDismissPopover(
+            at: NSEvent.mouseLocation,
+            popoverFrame: popoverFrame,
+            statusItemFrame: statusItemFrame
+        ) else {
+            return
+        }
+
+        closePopover()
+    }
+
+    private func closePopover() {
+        removeOutsideClickMonitors()
+        guard popover.isShown else { return }
+        popover.performClose(nil)
+    }
+
+    private func statusItemButtonFrameInScreen() -> NSRect? {
+        guard let button = statusItem.button, let window = button.window else { return nil }
+        let buttonFrameInWindow = button.convert(button.bounds, to: nil)
+        return window.convertToScreen(buttonFrameInWindow)
+    }
+
+    deinit {
+        localMouseMonitor = nil
+        globalMouseMonitor = nil
     }
 
     private lazy var contextMenu: NSMenu = {
@@ -216,6 +278,26 @@ private final class StatusItemController: NSObject, NSPopoverDelegate {
     @objc private func quit() {
         NSApp.terminate(nil)
     }
+}
+
+private final class EventMonitorToken: @unchecked Sendable {
+    private let token: Any
+
+    init(_ token: Any) {
+        self.token = token
+    }
+
+    deinit {
+        NSEvent.removeMonitor(token)
+    }
+}
+
+func shouldDismissPopover(
+    at location: NSPoint,
+    popoverFrame: NSRect,
+    statusItemFrame: NSRect
+) -> Bool {
+    !popoverFrame.contains(location) && !statusItemFrame.contains(location)
 }
 
 func statusItemSymbol(for status: AppAggregateStatus) -> String {
