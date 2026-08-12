@@ -509,6 +509,7 @@ private struct UITestDevBarApp: App {
                 updateController: updateController
             )
         }
+        .defaultLaunchBehavior(.presented)
         .windowResizability(.contentSize)
     }
 }

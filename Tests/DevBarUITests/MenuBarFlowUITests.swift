@@ -64,6 +64,8 @@ final class MenuBarFlowUITests: XCTestCase {
 
     func testWorkspaceSwitchRespondsAcrossTheWholeSidebarRow() throws {
         let app = try launch(configurationJSON: Self.twoWorkspaceConfiguration)
+        XCTAssertTrue(app.buttons["menu.settings"].waitForExistence(timeout: 3))
+        app.buttons["menu.settings"].click()
         XCTAssertTrue(app.descendants(matching: .any)["settings.root"].waitForExistence(timeout: 3))
 
         let secondWorkspace = app.buttons["workspace.44444444-4444-4444-4444-444444444444"]
