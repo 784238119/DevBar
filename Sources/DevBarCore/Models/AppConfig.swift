@@ -195,11 +195,14 @@ public enum HealthCheckConfig: Codable, Equatable, Sendable {
 
 public struct PreferencesConfig: Codable, Equatable, Sendable {
     public static let defaultLogDirectory = "/tmp/DevBar/Logs"
+    public static let defaultLogViewerEntryLimit = 5_000
+    public static let logViewerEntryLimitRange = 100...10_000
 
     public var shellPath: String
     public var logDirectory: String
     public var logFileSizeMiB: Int
     public var logFileCount: Int
+    public var logViewerEntryLimit: Int
     public var sigintGraceSeconds: Int
     public var sigtermGraceSeconds: Int
 
@@ -208,6 +211,7 @@ public struct PreferencesConfig: Codable, Equatable, Sendable {
         logDirectory: String = PreferencesConfig.defaultLogDirectory,
         logFileSizeMiB: Int,
         logFileCount: Int,
+        logViewerEntryLimit: Int = PreferencesConfig.defaultLogViewerEntryLimit,
         sigintGraceSeconds: Int,
         sigtermGraceSeconds: Int
     ) {
@@ -215,6 +219,7 @@ public struct PreferencesConfig: Codable, Equatable, Sendable {
         self.logDirectory = logDirectory
         self.logFileSizeMiB = logFileSizeMiB
         self.logFileCount = logFileCount
+        self.logViewerEntryLimit = logViewerEntryLimit
         self.sigintGraceSeconds = sigintGraceSeconds
         self.sigtermGraceSeconds = sigtermGraceSeconds
     }
@@ -224,6 +229,7 @@ public struct PreferencesConfig: Codable, Equatable, Sendable {
         logDirectory: defaultLogDirectory,
         logFileSizeMiB: 5,
         logFileCount: 3,
+        logViewerEntryLimit: defaultLogViewerEntryLimit,
         sigintGraceSeconds: 8,
         sigtermGraceSeconds: 3
     )
@@ -233,6 +239,7 @@ public struct PreferencesConfig: Codable, Equatable, Sendable {
         case logDirectory
         case logFileSizeMiB
         case logFileCount
+        case logViewerEntryLimit
         case sigintGraceSeconds
         case sigtermGraceSeconds
     }
@@ -244,6 +251,8 @@ public struct PreferencesConfig: Codable, Equatable, Sendable {
             ?? Self.defaultLogDirectory
         logFileSizeMiB = try container.decode(Int.self, forKey: .logFileSizeMiB)
         logFileCount = try container.decode(Int.self, forKey: .logFileCount)
+        logViewerEntryLimit = try container.decodeIfPresent(Int.self, forKey: .logViewerEntryLimit)
+            ?? Self.defaultLogViewerEntryLimit
         sigintGraceSeconds = try container.decode(Int.self, forKey: .sigintGraceSeconds)
         sigtermGraceSeconds = try container.decode(Int.self, forKey: .sigtermGraceSeconds)
     }

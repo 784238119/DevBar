@@ -7,20 +7,27 @@ struct SettingsRootView: View {
     let updateController: AppUpdateController
 
     var body: some View {
-        Group {
-            if viewModel.showsPreferences {
-                PreferencesView(
-                    viewModel: viewModel,
-                    presentationPreferences: presentationPreferences,
-                    updateController: updateController
-                )
-            } else {
-                HStack(spacing: 0) {
-                    sidebar
-                    Divider().overlay(DevBarTheme.separator.opacity(0.7))
-                    workspaceContent
+        ZStack(alignment: .top) {
+            Group {
+                if viewModel.showsPreferences {
+                    PreferencesView(
+                        viewModel: viewModel,
+                        presentationPreferences: presentationPreferences,
+                        updateController: updateController
+                    )
+                } else {
+                    HStack(spacing: 0) {
+                        sidebar
+                        Divider().overlay(DevBarTheme.separator.opacity(0.7))
+                        workspaceContent
+                    }
                 }
             }
+            .ignoresSafeArea(.container, edges: .top)
+
+            titlebarGlass
+                .allowsHitTesting(false)
+                .ignoresSafeArea(.container, edges: .top)
         }
         .frame(width: 980, height: 680)
         .background(background.ignoresSafeArea())
@@ -208,5 +215,37 @@ struct SettingsRootView: View {
                 endRadius: 520
             )
         }
+    }
+
+    /// Lets the page continue beneath the traffic lights while softly
+    /// separating overlapping controls from the content below.
+    private var titlebarGlass: some View {
+        ZStack {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(0.14),
+                    DevBarTheme.auroraBlue.opacity(0.06),
+                    .clear,
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+        .frame(height: 72)
+        .mask(
+            LinearGradient(
+                stops: [
+                    .init(color: .black, location: 0),
+                    .init(color: .black.opacity(0.94), location: 0.48),
+                    .init(color: .clear, location: 1),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+        .accessibilityHidden(true)
     }
 }

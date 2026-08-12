@@ -49,6 +49,7 @@ public struct ConfigValidator {
 
     public static let allowedTintHexes: Set<String> = Set(selectableTintHexes + [
         // Keep existing configurations valid after the visual palette changed.
+        "#FF6B58",
         "#FF7A59",
         "#FF5C8A",
         "#A78BFA",
@@ -93,6 +94,13 @@ public struct ConfigValidator {
         }
         validateRange(preferences.logFileSizeMiB, range: 1...100, path: "preferences.logFileSizeMiB", label: "Log file size", issues: &issues)
         validateRange(preferences.logFileCount, range: 1...10, path: "preferences.logFileCount", label: "Log file count", issues: &issues)
+        validateRange(
+            preferences.logViewerEntryLimit,
+            range: PreferencesConfig.logViewerEntryLimitRange,
+            path: "preferences.logViewerEntryLimit",
+            label: "Log viewer entry limit",
+            issues: &issues
+        )
         validateRange(preferences.sigintGraceSeconds, range: 1...60, path: "preferences.sigintGraceSeconds", label: "SIGINT grace period", issues: &issues)
         validateRange(preferences.sigtermGraceSeconds, range: 1...30, path: "preferences.sigtermGraceSeconds", label: "SIGTERM grace period", issues: &issues)
         return issues

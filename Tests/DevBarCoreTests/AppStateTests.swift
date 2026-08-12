@@ -48,6 +48,33 @@ final class AppStateTests: XCTestCase {
         XCTAssertEqual(stoppedWorkspaces, [workspace.id])
     }
 
+    func testGlobalStartAndStopDelegateToEveryConfiguredWorkspace() async throws {
+        let first = workspace()
+        let second = WorkspaceConfig(
+            name: "Second Workspace",
+            rootDirectory: first.rootDirectory,
+            iconSymbol: first.iconSymbol,
+            tintHex: first.tintHex,
+            environment: first.environment,
+            services: first.services
+        )
+        let supervisor = FakeSupervisor()
+        let appState = makeAppState(
+            configuration: .init(result: .success(config(workspaces: [first, second]))),
+            supervisor: supervisor
+        )
+
+        appState.start()
+        try await waitUntil { appState.isConfigurationReady && appState.isShellEnvironmentReady }
+        await appState.startAll()
+        await appState.stopAll()
+
+        let startedWorkspaces = await supervisor.startedWorkspaceIDs()
+        let stoppedWorkspaces = await supervisor.stoppedWorkspaceIDs()
+        XCTAssertEqual(startedWorkspaces, [first.id, second.id])
+        XCTAssertEqual(stoppedWorkspaces, [first.id, second.id])
+    }
+
     func testRunningServiceLocksWorkspaceEditsAndRequiresQuitConfirmation() async throws {
         let workspace = workspace()
         let supervisor = FakeSupervisor()

@@ -66,6 +66,7 @@
 		9DBF4105224DE29F22CE0D55 /* RunnerProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC23C2512385F2EEC5EA8688 /* RunnerProtocol.swift */; };
 		9E475FC3CD61901938B3F60D /* PosixSpawner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A4C703DA3F592515C92B349 /* PosixSpawner.swift */; };
 		9E9C4120824186690F8699C8 /* DevBarApplicationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FCE46D9F543B1FD1D697200 /* DevBarApplicationDelegate.swift */; };
+		9F72C5E9E67A2B77B077B9B0 /* SystemResourceMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB416ECC9816E1563B197D8C /* SystemResourceMonitor.swift */; };
 		A10DF6BC44BF8CCCAF2CFEFA /* RunnerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F335DD31C38BD3942329C3B3 /* RunnerClient.swift */; };
 		A1B68B158E837E79C4323BB6 /* ServiceState.swift in Sources */ = {isa = PBXBuildFile; fileRef = D818B837EE7C1B46B58C8F92 /* ServiceState.swift */; };
 		A7C039F0260079278DBE85C3 /* EnvironmentMerger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 683C94DE613DF4A1445E80AC /* EnvironmentMerger.swift */; };
@@ -80,6 +81,7 @@
 		D13501067CD23D2136742361 /* ShellEnvironmentProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F8BC5786A5CE04E4DCAD704 /* ShellEnvironmentProvider.swift */; };
 		D3AAD1347DD2C9AC680CD3AE /* RunnerChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71B7861D8EE06332FA425309 /* RunnerChannel.swift */; };
 		D52BBFB322C03693DF3904D6 /* LogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 691E0BFC4F8768A031AA87A2 /* LogStore.swift */; };
+		D907C5C09797A7746BA7956B /* SystemResourceMonitorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD69052B0EF170023B894D15 /* SystemResourceMonitorTests.swift */; };
 		D9133A289A9D96CE794BC313 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BD018AA036645B52748D8BCC /* Assets.xcassets */; };
 		DA4D812F4A4C4A02BBFE5BCA /* AppPresentationPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 405644867E47B50CC512CCD6 /* AppPresentationPreferences.swift */; };
 		DEC58166DDB31726FB749E48 /* WorkspaceDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A7AF3B3D886ABF7025C03B /* WorkspaceDetectorTests.swift */; };
@@ -249,12 +251,14 @@
 		E789782DABB8A91DDEF90CCE /* DevBarAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DevBarAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E89E618D01F4EE16A283000B /* DevBarTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevBarTheme.swift; sourceTree = "<group>"; };
 		EA7058DA032939A55C448999 /* DevBarCoreTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DevBarCoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		EB416ECC9816E1563B197D8C /* SystemResourceMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemResourceMonitor.swift; sourceTree = "<group>"; };
 		EBA054BAFB9FCD39AC3D6F1E /* AppStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateTests.swift; sourceTree = "<group>"; };
 		EDFDE0CA52DECD6F34002F7A /* RunnerClientIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerClientIntegrationTests.swift; sourceTree = "<group>"; };
 		F11477E655A5C4FC4F047347 /* SettingsComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsComponents.swift; sourceTree = "<group>"; };
 		F335DD31C38BD3942329C3B3 /* RunnerClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerClient.swift; sourceTree = "<group>"; };
 		F9F6672F58FF6B8618BB23FF /* HealthChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthChecker.swift; sourceTree = "<group>"; };
 		FC23C2512385F2EEC5EA8688 /* RunnerProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerProtocol.swift; sourceTree = "<group>"; };
+		FD69052B0EF170023B894D15 /* SystemResourceMonitorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemResourceMonitorTests.swift; sourceTree = "<group>"; };
 		FF68B3B7FB3A6DA0D6D17D2B /* ZshResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZshResolver.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -437,6 +441,7 @@
 				3FCE46D9F543B1FD1D697200 /* DevBarApplicationDelegate.swift */,
 				2D5C9DAAF1BB55C5628149CF /* Lifecycle */,
 				CB110B5B3B554E183A4CC833 /* Preferences */,
+				EE2775003DB244B26AC71DFB /* Resource */,
 				1175B6BC7940C29B4C5C9EAE /* Theme */,
 				C68FF205B05CB4B1B3C46DA4 /* Updates */,
 				FFC8F5A994105A11B62E9E55 /* ViewModels */,
@@ -545,6 +550,7 @@
 				5B49BC1ADB5D4673B03BF892 /* AppUpdateControllerTests.swift */,
 				57A400D267C91FBB2DE67B14 /* MainWindowCoordinatorTests.swift */,
 				0B6C2E4759E18E3341CAAA64 /* SettingsBehaviorTests.swift */,
+				FD69052B0EF170023B894D15 /* SystemResourceMonitorTests.swift */,
 			);
 			name = DevBarAppTests;
 			path = Tests/DevBarAppTests;
@@ -585,6 +591,14 @@
 				D818B837EE7C1B46B58C8F92 /* ServiceState.swift */,
 			);
 			path = Models;
+			sourceTree = "<group>";
+		};
+		EE2775003DB244B26AC71DFB /* Resource */ = {
+			isa = PBXGroup;
+			children = (
+				EB416ECC9816E1563B197D8C /* SystemResourceMonitor.swift */,
+			);
+			path = Resource;
 			sourceTree = "<group>";
 		};
 		F8CE4CA7E338C4DFD82760B1 /* Runtime */ = {
@@ -902,6 +916,7 @@
 				3258C1020A977991EFC87738 /* AppUpdateControllerTests.swift in Sources */,
 				64200096A4FC8DBC34F6CF41 /* MainWindowCoordinatorTests.swift in Sources */,
 				E2E54CEC28BDF0181B9B7B82 /* SettingsBehaviorTests.swift in Sources */,
+				D907C5C09797A7746BA7956B /* SystemResourceMonitorTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -925,6 +940,7 @@
 				93CB952DF4AE0E396DD1D7C0 /* SettingsComponents.swift in Sources */,
 				4BEB5C93F132FC8E411F4E88 /* SettingsRootView.swift in Sources */,
 				15F9B75860739733F29B5BD8 /* SettingsViewModel.swift in Sources */,
+				9F72C5E9E67A2B77B077B9B0 /* SystemResourceMonitor.swift in Sources */,
 				C59945D630D23E2F8FC43C71 /* WorkspaceCardView.swift in Sources */,
 				AF5A6914C881EBCA6D363EA4 /* WorkspaceImportSheet.swift in Sources */,
 				17CF5AE66F018698DC1DCF13 /* WorkspaceSettingsView.swift in Sources */,

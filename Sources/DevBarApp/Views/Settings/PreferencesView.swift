@@ -156,6 +156,16 @@ struct PreferencesView: View {
                             range: 1...10,
                             suffix: "个"
                         )
+                        preferenceStepper(
+                            "日志加载条数",
+                            value: $viewModel.draft.preferences.logViewerEntryLimit,
+                            range: PreferencesConfig.logViewerEntryLimitRange,
+                            step: 100,
+                            suffix: "条"
+                        )
+                        Text("日志窗口最多加载 10,000 条；降低此值可减少大日志的界面占用。")
+                            .font(.system(size: 11))
+                            .foregroundStyle(DevBarTheme.textSecondary)
                     }
                 }
 
@@ -186,6 +196,7 @@ struct PreferencesView: View {
             .padding(.bottom, 24)
         }
         .scrollIndicators(.hidden)
+        .padding(.top, 44)
     }
 
     private var menuBarIconBinding: Binding<Bool> {
@@ -238,6 +249,7 @@ struct PreferencesView: View {
         _ label: String,
         value: Binding<Int>,
         range: ClosedRange<Int>,
+        step: Int = 1,
         suffix: String
     ) -> some View {
         HStack {
@@ -247,7 +259,7 @@ struct PreferencesView: View {
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(DevBarTheme.textSecondary)
                 .frame(width: 78, alignment: .trailing)
-            Stepper("", value: value, in: range)
+            Stepper("", value: value, in: range, step: step)
                 .labelsHidden()
                 .onChange(of: value.wrappedValue) {
                     Task { await viewModel.commitPreferences() }

@@ -56,6 +56,31 @@ final class AppConfigTests: XCTestCase {
             AppConfig.empty.preferences,
             .init(shellPath: "", logFileSizeMiB: 5, logFileCount: 3, sigintGraceSeconds: 8, sigtermGraceSeconds: 3)
         )
+        XCTAssertEqual(
+            AppConfig.empty.preferences.logViewerEntryLimit,
+            PreferencesConfig.defaultLogViewerEntryLimit
+        )
+    }
+
+    func testLegacyPreferencesUseDefaultLogViewerEntryLimit() throws {
+        let data = try JSONSerialization.data(withJSONObject: [
+            "schemaVersion": 1,
+            "workspaces": [],
+            "preferences": [
+                "shellPath": "",
+                "logFileSizeMiB": 5,
+                "logFileCount": 3,
+                "sigintGraceSeconds": 8,
+                "sigtermGraceSeconds": 3
+            ]
+        ])
+
+        let config = try JSONDecoder().decode(AppConfig.self, from: data)
+
+        XCTAssertEqual(
+            config.preferences.logViewerEntryLimit,
+            PreferencesConfig.defaultLogViewerEntryLimit
+        )
     }
 
     func testDecodingFutureSchemaIsRejected() throws {

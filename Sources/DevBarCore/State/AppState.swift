@@ -134,6 +134,7 @@ public enum ConfigurationEventError: Error, LocalizedError, Sendable {
 public final class AppState {
     public private(set) var config: AppConfig = .empty
     public private(set) var serviceStates: [UUID: ServiceState] = [:]
+    public private(set) var serviceProcessGroups: [UUID: Int32] = [:]
     public private(set) var alert: AppAlert?
     public private(set) var logWarnings: [LogStoreWarning] = []
     public private(set) var isConfigurationReady = false
@@ -233,6 +234,20 @@ public final class AppState {
         await refreshLogWarnings()
     }
 
+    /// Starts every configured service that opted into bulk start, across all workspaces.
+    public func startAll() async {
+        let awaitedGeneration = configurationEventGeneration
+        await configurationEventTail?.value
+        guard lastFailedConfigurationEventGeneration != awaitedGeneration,
+              canStartServices()
+        else { return }
+
+        for workspace in config.workspaces {
+            await supervisor.startAll(workspace: workspace, preferences: config.preferences)
+        }
+        await refreshLogWarnings()
+    }
+
     public func start(serviceID: UUID, workspaceID: UUID) async {
         let awaitedGeneration = configurationEventGeneration
         await configurationEventTail?.value
@@ -252,6 +267,14 @@ public final class AppState {
 
     public func stopAll(workspaceID: UUID) async {
         await supervisor.stopAll(workspaceID: workspaceID)
+        await refreshLogWarnings()
+    }
+
+    /// Stops all supervised services without requiring the caller to coordinate workspaces.
+    public func stopAll() async {
+        for workspace in config.workspaces {
+            await supervisor.stopAll(workspaceID: workspace.id)
+        }
         await refreshLogWarnings()
     }
 
@@ -456,12 +479,21 @@ public final class AppState {
             for await runtime in stream {
                 guard !Task.isCancelled else { return }
                 self?.serviceStates[runtime.serviceID] = runtime.state
+                switch runtime.state {
+                case .stopped, .failed:
+                    self?.serviceProcessGroups[runtime.serviceID] = nil
+                case .starting, .running, .ready, .unready, .stopping:
+                    break
+                }
             }
         }
         eventSubscriptionTask = Task { [weak self, supervisor] in
             let stream = await supervisor.runtimeEvents()
-            for await _ in stream {
+            for await supervisedEvent in stream {
                 guard !Task.isCancelled else { return }
+                if case let .runner(.started(_, _, processGroupID)) = supervisedEvent.event {
+                    self?.serviceProcessGroups[supervisedEvent.serviceID] = processGroupID
+                }
                 await self?.refreshLogWarnings()
             }
         }

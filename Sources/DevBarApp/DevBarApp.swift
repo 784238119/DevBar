@@ -434,6 +434,12 @@ private struct LogSceneContent: View {
             guard dependencies.appState.isConfigurationReady else { return }
             updateSelection(to: serviceID)
         }
+        .onChange(of: dependencies.appState.config.preferences.logViewerEntryLimit) {
+            guard dependencies.appState.isConfigurationReady else { return }
+            viewModel = dependencies.makeLogViewModel(
+                selectedServiceID: viewModel?.selectedServiceID
+            )
+        }
         .task {
             while !dependencies.appState.isConfigurationReady {
                 guard !Task.isCancelled else { return }

@@ -7,6 +7,7 @@ struct MenuBarPanel: View {
     let openSettings: () -> Void
     let openLogs: (UUID) -> Void
     @State private var scrollContentHeight: CGFloat = 1
+    @State private var resourceMonitor = SystemResourceMonitor()
 
     private let maximumPanelHeight: CGFloat = 520
     private let headerHeight: CGFloat = 60
@@ -85,6 +86,9 @@ struct MenuBarPanel: View {
         .foregroundStyle(DevBarTheme.textPrimary)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("menu.panel")
+        .task {
+            await resourceMonitor.start(serviceProcessGroups: { appState.serviceProcessGroups })
+        }
     }
 
     @ViewBuilder
@@ -97,6 +101,7 @@ struct MenuBarPanel: View {
                     WorkspaceCardView(
                         workspace: workspace,
                         states: appState.serviceStates,
+                        memoryUsage: resourceMonitor.serviceResidentBytes,
                         initiallyExpanded: index == 0,
                         toggleService: { serviceID in
                             Task {
