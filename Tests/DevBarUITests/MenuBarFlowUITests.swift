@@ -62,6 +62,24 @@ final class MenuBarFlowUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["命令通过非交互 zsh 在前台运行"].exists)
     }
 
+    func testWorkspaceSwitchRespondsAcrossTheWholeSidebarRow() throws {
+        let app = try launch(configurationJSON: Self.twoWorkspaceConfiguration)
+        XCTAssertTrue(app.buttons["menu.settings"].waitForExistence(timeout: 3))
+        app.buttons["menu.settings"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["settings.root"].waitForExistence(timeout: 3))
+
+        let secondWorkspace = app.buttons["workspace.44444444-4444-4444-4444-444444444444"]
+        XCTAssertTrue(secondWorkspace.waitForExistence(timeout: 3))
+        XCTAssertGreaterThan(secondWorkspace.frame.width, 150)
+
+        secondWorkspace.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).click()
+
+        let nameField = app.textFields["workspace.name"]
+        let switched = NSPredicate(format: "value == %@", "AI Help Desk")
+        expectation(for: switched, evaluatedWith: nameField)
+        waitForExpectations(timeout: 2)
+    }
+
     func testPreferencesUseTheFullWindowAndCanReturnToWorkspace() throws {
         let app = try launch(configurationJSON: Self.museCubeConfiguration)
         XCTAssertTrue(app.buttons["menu.settings"].waitForExistence(timeout: 3))
@@ -194,6 +212,39 @@ final class MenuBarFlowUITests: XCTestCase {
               "healthCheck": { "kind": "none" }
             }
           ]
+        }
+      ],
+      "preferences": {
+        "shellPath": "",
+        "logFileSizeMiB": 5,
+        "logFileCount": 3,
+        "sigintGraceSeconds": 8,
+        "sigtermGraceSeconds": 3
+      }
+    }
+    """
+
+    private static let twoWorkspaceConfiguration = """
+    {
+      "schemaVersion": 1,
+      "workspaces": [
+        {
+          "id": "11111111-1111-1111-1111-111111111111",
+          "name": "MuseCube",
+          "rootDirectory": "/tmp",
+          "iconSymbol": "terminal.fill",
+          "tintHex": "#FF6B58",
+          "environment": [],
+          "services": []
+        },
+        {
+          "id": "44444444-4444-4444-4444-444444444444",
+          "name": "AI Help Desk",
+          "rootDirectory": "/tmp",
+          "iconSymbol": "terminal.fill",
+          "tintHex": "#3B82F6",
+          "environment": [],
+          "services": []
         }
       ],
       "preferences": {

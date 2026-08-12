@@ -60,6 +60,7 @@ final class AppConfigTests: XCTestCase {
             AppConfig.empty.preferences.logViewerEntryLimit,
             PreferencesConfig.defaultLogViewerEntryLimit
         )
+        XCTAssertEqual(AppConfig.empty.preferences.logRetentionDays, 7)
     }
 
     func testLegacyPreferencesUseDefaultLogViewerEntryLimit() throws {
@@ -81,6 +82,7 @@ final class AppConfigTests: XCTestCase {
             config.preferences.logViewerEntryLimit,
             PreferencesConfig.defaultLogViewerEntryLimit
         )
+        XCTAssertEqual(config.preferences.logRetentionDays, PreferencesConfig.defaultLogRetentionDays)
     }
 
     func testDecodingFutureSchemaIsRejected() throws {

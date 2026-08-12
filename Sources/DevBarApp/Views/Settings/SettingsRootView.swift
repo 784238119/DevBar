@@ -79,7 +79,8 @@ struct SettingsRootView: View {
                             Spacer()
                         }
                         .padding(.horizontal, 9)
-                        .frame(height: 44)
+                        .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
                         .background(
                             viewModel.selectedWorkspaceID == workspace.id && !viewModel.showsPreferences
                                 ? DevBarTheme.accentStart.opacity(0.10)

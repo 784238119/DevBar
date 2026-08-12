@@ -7,6 +7,7 @@ public struct LogStoreWarning: Equatable, Sendable, Identifiable {
         case write
         case malformedRecord
         case delete
+        case cleanup
     }
 
     public let id: UUID
@@ -57,7 +58,11 @@ public actor LogStore {
     private let maximumEntries: Int
     private var maximumFileSizeBytes: Int
     private var fileCount: Int
+    private var retentionDays: Int
     private let fileManager: FileManager
+    private let now: @Sendable () -> Date
+    private var calendar: Calendar
+    private var lastCleanupAt: Date?
     private var entriesByService: [UUID: [LogEntry]] = [:]
     private var locations: [UUID: ServiceLocation] = [:]
     private var writers: [UUID: RotatingLogWriter] = [:]
@@ -72,21 +77,28 @@ public actor LogStore {
         maximumEntries: Int = LogStore.defaultMaximumEntries,
         maximumFileSizeBytes: Int = 5 * 1_024 * 1_024,
         fileCount: Int = 3,
-        fileManager: FileManager = .default
+        retentionDays: Int = PreferencesConfig.defaultLogRetentionDays,
+        fileManager: FileManager = .default,
+        now: @escaping @Sendable () -> Date = Date.init,
+        calendar: Calendar = .autoupdatingCurrent
     ) {
         logsRootURL = paths.logsRootURL
         defaultLogsRootURL = paths.logsRootURL
         self.maximumEntries = max(1, maximumEntries)
         self.maximumFileSizeBytes = maximumFileSizeBytes
         self.fileCount = fileCount
+        self.retentionDays = retentionDays
         self.fileManager = fileManager
+        self.now = now
+        self.calendar = calendar
     }
 
     /// Applies the saved rotation policy before a service starts. Writers do not hold
     /// open file descriptors, so dropping the cache safely applies the new policy to
     /// the next append without interrupting existing processes.
-    public func configure(logDirectory: String, logFileSizeMiB: Int, fileCount: Int) throws {
-        guard (1...100).contains(logFileSizeMiB), (1...10).contains(fileCount) else {
+    public func configure(logDirectory: String, logFileSizeMiB: Int, fileCount: Int, retentionDays: Int) throws {
+        guard (1...100).contains(logFileSizeMiB), (1...10).contains(fileCount),
+              PreferencesConfig.logRetentionDaysRange.contains(retentionDays) else {
             throw RotatingLogWriterError.invalidConfiguration
         }
         let configuredRoot = URL(fileURLWithPath: logDirectory, isDirectory: true).standardizedFileURL
@@ -99,15 +111,20 @@ public actor LogStore {
         let maximumFileSizeBytes = logFileSizeMiB * 1_024 * 1_024
         guard self.maximumFileSizeBytes != maximumFileSizeBytes
                 || self.fileCount != fileCount
+                || self.retentionDays != retentionDays
                 || logsRootURL != requestedRoot else {
+            try cleanupExpiredLogsIfNeeded(force: false)
             return
         }
         logsRootURL = requestedRoot
         self.maximumFileSizeBytes = maximumFileSizeBytes
         self.fileCount = fileCount
+        self.retentionDays = retentionDays
+        lastCleanupAt = nil
         writers.removeAll()
         locations.removeAll()
         loadedHistory.removeAll()
+        try cleanupExpiredLogsIfNeeded(force: true)
     }
 
     /// Call this before a Runner is launched. Unlike append failures, initialization
@@ -176,10 +193,7 @@ public actor LogStore {
     public func loadRecent(workspaceID: UUID, serviceID: UUID, limit: Int = LogStore.defaultMaximumEntries) -> [LogEntry] {
         if !loadedHistory.contains(serviceID) {
             do {
-                let writer = try writer(workspaceID: workspaceID, serviceID: serviceID)
-                let records = try writer.readRecentRecords(limit: limit) { message in
-                    self.emitWarning(serviceID: serviceID, kind: .malformedRecord, message: message)
-                }
+                let records = try readRecentRecords(workspaceID: workspaceID, serviceID: serviceID, limit: limit)
                 replaceMemory(with: records, serviceID: serviceID)
                 loadedHistory.insert(serviceID)
             } catch {
@@ -213,8 +227,17 @@ public actor LogStore {
     public func deleteHistory(serviceID: UUID) {
         guard let location = locations[serviceID] else { return }
         do {
-            let writer = try writer(workspaceID: location.workspaceID, serviceID: serviceID)
-            try writer.removeHistory()
+            let serviceDirectory = serviceDirectory(workspaceID: location.workspaceID, serviceID: serviceID)
+            guard serviceDirectory.path.hasPrefix(logsRootURL.path + "/") else {
+                throw RotatingLogWriterError.unsafeLogDirectory
+            }
+            if fileManager.fileExists(atPath: serviceDirectory.path) {
+                let values = try serviceDirectory.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+                guard values.isDirectory == true, values.isSymbolicLink != true else {
+                    throw RotatingLogWriterError.unsafeLogDirectory
+                }
+                try fileManager.removeItem(at: serviceDirectory)
+            }
             entriesByService[serviceID] = []
             writers[serviceID] = nil
             locations[serviceID] = nil
@@ -231,10 +254,16 @@ public actor LogStore {
     }
 
     private func writer(workspaceID: UUID, serviceID: UUID) throws -> RotatingLogWriter {
-        let expectedDirectory = logDirectory(workspaceID: workspaceID, serviceID: serviceID)
+        try cleanupExpiredLogsIfNeeded(force: false)
+        let expectedDirectory = logDirectory(workspaceID: workspaceID, serviceID: serviceID, date: now())
         if let location = locations[serviceID] {
-            guard location.workspaceID == workspaceID, location.directory == expectedDirectory else {
+            guard location.workspaceID == workspaceID else {
                 throw RotatingLogWriterError.unsafeLogDirectory
+            }
+            if location.directory != expectedDirectory {
+                writers[serviceID] = nil
+                locations[serviceID] = nil
+                loadedHistory.remove(serviceID)
             }
         }
         if let existing = writers[serviceID] { return existing }
@@ -253,10 +282,19 @@ public actor LogStore {
         return writer
     }
 
-    private func logDirectory(workspaceID: UUID, serviceID: UUID) -> URL {
+    private func serviceDirectory(workspaceID: UUID, serviceID: UUID) -> URL {
         logsRootURL
             .appendingPathComponent(workspaceID.uuidString.lowercased(), isDirectory: true)
             .appendingPathComponent(serviceID.uuidString.lowercased(), isDirectory: true)
+            .standardizedFileURL
+    }
+
+    private func logDirectory(workspaceID: UUID, serviceID: UUID, date: Date) -> URL {
+        let components = calendar.dateComponents([.year, .month, .day], from: date)
+        return serviceDirectory(workspaceID: workspaceID, serviceID: serviceID)
+            .appendingPathComponent(String(format: "%04d", components.year ?? 0), isDirectory: true)
+            .appendingPathComponent(String(format: "%02d", components.month ?? 0), isDirectory: true)
+            .appendingPathComponent(String(format: "%02d", components.day ?? 0), isDirectory: true)
             .standardizedFileURL
     }
 
@@ -286,6 +324,115 @@ public actor LogStore {
         }
         try fileManager.createDirectory(at: workspaceDirectory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
         try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: workspaceDirectory.path)
+    }
+
+    private func readRecentRecords(workspaceID: UUID, serviceID: UUID, limit: Int) throws -> [LogEntry] {
+        guard limit > 0 else { return [] }
+        let directories = try historyDirectories(workspaceID: workspaceID, serviceID: serviceID)
+        var newestFirst: [LogEntry] = []
+        for directory in directories.reversed() {
+            let reader = try RotatingLogWriter(
+                directory: directory,
+                maximumFileSizeBytes: maximumFileSizeBytes,
+                fileCount: fileCount,
+                fileManager: fileManager
+            )
+            let remaining = limit - newestFirst.count
+            let records = try reader.readRecentRecords(limit: remaining) { message in
+                self.emitWarning(serviceID: serviceID, kind: .malformedRecord, message: message)
+            }
+            newestFirst.insert(contentsOf: records, at: 0)
+            if newestFirst.count >= limit { break }
+        }
+        return Array(newestFirst.suffix(limit))
+    }
+
+    /// Returns the legacy service directory first, followed by dated directories in
+    /// chronological order. This keeps logs written before date partitioning readable.
+    private func historyDirectories(workspaceID: UUID, serviceID: UUID) throws -> [URL] {
+        let serviceRoot = serviceDirectory(workspaceID: workspaceID, serviceID: serviceID)
+        guard fileManager.fileExists(atPath: serviceRoot.path) else { return [] }
+        let values = try serviceRoot.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+        guard values.isDirectory == true, values.isSymbolicLink != true else {
+            throw RotatingLogWriterError.unsafeLogDirectory
+        }
+        var directories: [URL] = []
+        if fileManager.fileExists(atPath: serviceRoot.appendingPathComponent("current.log").path) {
+            directories.append(serviceRoot)
+        }
+        for year in try numericDirectories(in: serviceRoot, digits: 4) {
+            for month in try numericDirectories(in: year, digits: 2) {
+                directories.append(contentsOf: try numericDirectories(in: month, digits: 2))
+            }
+        }
+        return directories
+    }
+
+    private func numericDirectories(in parent: URL, digits: Int) throws -> [URL] {
+        guard fileManager.fileExists(atPath: parent.path) else { return [] }
+        return try fileManager.contentsOfDirectory(
+            at: parent,
+            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+            options: [.skipsHiddenFiles]
+        ).filter { url in
+            let name = url.lastPathComponent
+            guard name.count == digits, name.allSatisfy(\.isNumber) else { return false }
+            let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            guard values.isSymbolicLink != true else { throw RotatingLogWriterError.unsafeLogDirectory }
+            return values.isDirectory == true
+        }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+    }
+
+    private func cleanupExpiredLogsIfNeeded(force: Bool) throws {
+        let currentDate = now()
+        if !force, let lastCleanupAt, currentDate.timeIntervalSince(lastCleanupAt) < 60 * 60 { return }
+        guard fileManager.fileExists(atPath: logsRootURL.path) else {
+            lastCleanupAt = currentDate
+            return
+        }
+        let today = calendar.startOfDay(for: currentDate)
+        guard let cutoff = calendar.date(byAdding: .day, value: -(retentionDays - 1), to: today) else { return }
+
+        for workspace in try uuidDirectories(in: logsRootURL) {
+            for service in try uuidDirectories(in: workspace) {
+                for year in try numericDirectories(in: service, digits: 4) {
+                    for month in try numericDirectories(in: year, digits: 2) {
+                        for day in try numericDirectories(in: month, digits: 2) {
+                            let parts = DateComponents(
+                                calendar: calendar,
+                                year: Int(year.lastPathComponent),
+                                month: Int(month.lastPathComponent),
+                                day: Int(day.lastPathComponent)
+                            )
+                            guard let directoryDate = calendar.date(from: parts), directoryDate < cutoff else { continue }
+                            try fileManager.removeItem(at: day)
+                        }
+                        try removeDirectoryIfEmpty(month)
+                    }
+                    try removeDirectoryIfEmpty(year)
+                }
+            }
+        }
+        lastCleanupAt = currentDate
+    }
+
+    private func uuidDirectories(in parent: URL) throws -> [URL] {
+        try fileManager.contentsOfDirectory(
+            at: parent,
+            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+            options: [.skipsHiddenFiles]
+        ).filter { url in
+            guard UUID(uuidString: url.lastPathComponent) != nil else { return false }
+            let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            guard values.isSymbolicLink != true else { throw RotatingLogWriterError.unsafeLogDirectory }
+            return values.isDirectory == true
+        }
+    }
+
+    private func removeDirectoryIfEmpty(_ directory: URL) throws {
+        if try fileManager.contentsOfDirectory(atPath: directory.path).isEmpty {
+            try fileManager.removeItem(at: directory)
+        }
     }
 
     private func appendToMemory(_ entry: LogEntry, serviceID: UUID) {
