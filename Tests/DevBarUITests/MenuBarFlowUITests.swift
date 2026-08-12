@@ -31,7 +31,7 @@ final class MenuBarFlowUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Web"].exists)
         XCTAssertTrue(app.staticTexts["Server"].exists)
         XCTAssertTrue(app.buttons["启动全部"].exists)
-        XCTAssertTrue(app.staticTexts["内存 --"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["内存占用 内存 --"].exists)
         XCTAssertFalse(app.staticTexts["npm run dev"].exists)
 
         let screenshot = XCTAttachment(screenshot: app.screenshot())
