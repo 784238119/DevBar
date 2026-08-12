@@ -105,6 +105,7 @@ struct AppDependencies {
             services: LogServiceDescriptor.all(in: appState.config),
             selectedServiceID: selectedServiceID,
             store: logStore,
+            maximumEntries: appState.config.preferences.logViewerEntryLimit,
             openDirectory: { [appState, paths] service in
                 let directory = paths.logsRootURL(for: appState.config.preferences)
                     .appendingPathComponent(service.workspaceID.uuidString.lowercased(), isDirectory: true)

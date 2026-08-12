@@ -36,9 +36,9 @@ public enum LogStoreError: Error, Equatable, Sendable, LocalizedError {
 /// The UI-facing log store. Both memory and disk receive the same terminal-sanitized
 /// command output. Environment dictionaries and launch requests never enter this API.
 public actor LogStore {
-    /// Mirrors `tail -f -n 5000`: the in-memory viewer retains the most recent
-    /// 5,000 output lines while the rotating files remain the full source of history.
-    public static let defaultMaximumEntries = 5_000
+    /// Supports the configurable log viewer limit: memory retains at most the most
+    /// recent 10,000 output lines while rotating files remain the full history source.
+    public static let defaultMaximumEntries = 10_000
 
     private struct ServiceLocation: Sendable {
         let workspaceID: UUID

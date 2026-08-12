@@ -6,6 +6,7 @@ struct WorkspaceCardView: View {
 
     let workspace: WorkspaceConfig
     let states: [UUID: ServiceState]
+    let memoryUsage: [UUID: UInt64]
     let toggleService: (UUID) -> Void
     let openLogs: (UUID) -> Void
     let startAll: () -> Void
@@ -16,6 +17,7 @@ struct WorkspaceCardView: View {
     init(
         workspace: WorkspaceConfig,
         states: [UUID: ServiceState],
+        memoryUsage: [UUID: UInt64],
         initiallyExpanded: Bool,
         toggleService: @escaping (UUID) -> Void,
         openLogs: @escaping (UUID) -> Void,
@@ -24,6 +26,7 @@ struct WorkspaceCardView: View {
     ) {
         self.workspace = workspace
         self.states = states
+        self.memoryUsage = memoryUsage
         self.toggleService = toggleService
         self.openLogs = openLogs
         self.startAll = startAll
@@ -75,16 +78,20 @@ struct WorkspaceCardView: View {
                 .buttonStyle(DevBarPressButtonStyle())
 
                 if isExpanded {
-                    Button(allStopped ? "启动全部" : "停止全部") {
+                    Button {
                         allStopped ? startAll() : stopAll()
+                    } label: {
+                        Image(systemName: allStopped ? "play.fill" : "stop.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                            .frame(width: 32, height: 32)
+                            .contentShape(Rectangle())
                     }
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 13)
-                    .frame(height: 34)
-                    .background(allStopped ? AnyShapeStyle(DevBarTheme.accent) : AnyShapeStyle(Color.red.opacity(0.86)))
-                    .clipShape(RoundedRectangle(cornerRadius: DevBarTheme.controlRadius, style: .continuous))
+                    .foregroundStyle(allStopped ? DevBarTheme.accentMiddle : Color.red.opacity(0.86))
+                    .background(DevBarTheme.surfaceStrong, in: Circle())
+                    .overlay(Circle().stroke(DevBarTheme.separator.opacity(0.82), lineWidth: 1))
                     .buttonStyle(DevBarPressButtonStyle())
+                    .help(allStopped ? "启动此工作区" : "停止此工作区")
+                    .accessibilityLabel(allStopped ? "启动全部" : "停止全部")
                     .accessibilityIdentifier("workspace.startAll.\(workspace.id.uuidString)")
                     .animation(reduceMotion ? nil : DevBarTheme.stateAnimation, value: allStopped)
                 } else {
@@ -106,6 +113,7 @@ struct WorkspaceCardView: View {
                         ServiceRowView(
                             service: service,
                             state: states[service.id] ?? .stopped,
+                            residentBytes: memoryUsage[service.id],
                             openLogs: { openLogs(service.id) },
                             toggle: { toggleService(service.id) }
                         )

@@ -24,6 +24,8 @@ private struct WorkspaceSettingsContent: View {
     let workspaceIndex: Int
     @State private var showsEnvironmentEditor = false
     @State private var servicePendingDeletion: ServiceConfig?
+    @State private var expandedServiceIDs: Set<UUID> = []
+    @State private var hoveredServiceID: UUID?
     @State private var draggedServiceID: UUID?
     @State private var serviceDragOffset: CGFloat = 0
     @FocusState private var isWorkspaceNameFocused: Bool
@@ -240,18 +242,39 @@ private struct WorkspaceSettingsContent: View {
                     }
                 }
             } else {
-                VStack(spacing: 12) {
-                    ForEach(workspace.services) { service in
-                        serviceCard(service)
+                VStack(spacing: 0) {
+                    ForEach(Array(workspace.services.enumerated()), id: \.element.id) { index, service in
+                        serviceCard(service, at: index)
+
+                        if index < workspace.services.count - 1 {
+                            Divider()
+                                .padding(.leading, 66)
+                        }
                     }
+
+                    Divider()
+
+                    Text("点击服务名称可编辑详情，拖拽右侧图标可调整顺序。")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(DevBarTheme.textSecondary)
+                        .frame(maxWidth: .infinity, minHeight: 38, alignment: .center)
+                        .accessibilityIdentifier("service.list.hint")
                 }
+                .background(DevBarTheme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(DevBarTheme.separator.opacity(0.58), lineWidth: 0.75)
+                }
+                .shadow(color: DevBarTheme.surfaceShadow.opacity(0.22), radius: 10, y: 4)
                 .coordinateSpace(name: "service-list")
                 .animation(.snappy(duration: 0.22), value: workspace.services.map(\.id))
+                .animation(.snappy(duration: 0.20), value: expandedServiceIDs)
             }
         }
     }
 
-    private func serviceCard(_ service: ServiceConfig) -> some View {
+    private func serviceCard(_ service: ServiceConfig, at index: Int) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
                 Circle()
@@ -264,122 +287,139 @@ private struct WorkspaceSettingsContent: View {
                     .frame(width: 36, height: 36)
                     .background(Color(devBarHex: workspace.tintHex).opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
-                Text(service.name)
-                    .font(.system(size: 14, weight: .semibold))
-                    .lineLimit(1)
-
-                Spacer(minLength: 20)
-
-                Toggle(
-                    "加入启动全部",
-                    isOn: Binding(
-                        get: {
-                            workspace.services.first(where: { $0.id == service.id })?.includeInStartAll ?? false
-                        },
-                        set: { isIncluded in
-                            guard let index = workspace.services.firstIndex(where: { $0.id == service.id }) else {
-                                return
-                            }
-                            workspace.services[index].includeInStartAll = isIncluded
-                            Task { await viewModel.commitWorkspace(workspace.id) }
-                        }
-                    )
-                )
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .help("加入启动全部")
-                .accessibilityIdentifier("service.includeInStartAll.\(service.id.uuidString.lowercased())")
-            }
-            .frame(height: 48)
-
-            HStack(spacing: 0) {
-                serviceDetail(
-                    title: "目录",
-                    systemImage: "folder",
-                    value: directoryText(service.workingDirectory)
-                )
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                detailDivider
-
-                serviceDetail(
-                    title: "启动命令",
-                    systemImage: "terminal",
-                    value: service.command.isEmpty ? "未设置" : service.command,
-                    monospaced: true
-                )
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                healthDetail(service.healthCheck)
-                    .padding(.leading, 14)
-                    .frame(width: 164, alignment: .leading)
-                    .overlay(alignment: .leading) {
-                        Divider()
-                            .frame(height: 28)
-                    }
+                Button {
+                    toggleServiceExpansion(service.id)
+                } label: {
+                    Image(systemName: expandedServiceIDs.contains(service.id) ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(DevBarTheme.textPrimary)
+                        .frame(width: 24, height: 32)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(expandedServiceIDs.contains(service.id) ? "收起启动命令" : "展开启动命令")
+                .accessibilityLabel(expandedServiceIDs.contains(service.id) ? "收起 \(service.name)" : "展开 \(service.name)")
+                .accessibilityIdentifier("service.disclosure.\(service.id.uuidString.lowercased())")
 
                 Button {
-                    servicePendingDeletion = service
+                    viewModel.beginEditingService(workspaceID: workspace.id, serviceID: service.id)
                 } label: {
-                    Image(systemName: "trash")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.red)
-                        .frame(width: 28, height: 28)
-                        .background(Color.red.opacity(0.09), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(service.name)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(DevBarTheme.textPrimary)
+                            .lineLimit(1)
+                        Text(directoryText(service.workingDirectory))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(DevBarTheme.textSecondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(locked)
-                .help("删除服务")
-                .accessibilityLabel("删除服务 \(service.name)")
-            }
-            .frame(height: 40)
-        }
-        .padding(.horizontal, 14)
-        .background(DevBarTheme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(DevBarTheme.separator.opacity(0.58), lineWidth: 0.75)
-        )
-        .shadow(color: DevBarTheme.surfaceShadow.opacity(0.28), radius: 12, y: 5)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            viewModel.beginEditingService(workspaceID: workspace.id, serviceID: service.id)
-        }
-        .overlay(alignment: .trailing) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(DevBarTheme.surface)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(DevBarTheme.separator.opacity(0.74), lineWidth: 0.75)
-                    )
+                .help(locked ? "请先停止服务再编辑" : "编辑服务")
+                .accessibilityIdentifier("service.edit.\(service.id.uuidString.lowercased())")
 
-                Rectangle()
-                    .fill(DevBarTheme.surface)
-                    .frame(width: 3, height: 86)
-                    .offset(x: -11)
+                compactHealthDetail(service.healthCheck)
+                    .frame(width: 126, alignment: .leading)
+
+                Toggle(
+                    "加入启动全部",
+                    isOn: $workspace.services[index].includeInStartAll
+                )
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .tint(Color(devBarHex: workspace.tintHex))
+                .onChange(of: workspace.services[index].includeInStartAll) {
+                    Task { await viewModel.commitWorkspace(workspace.id) }
+                }
+                .help("加入启动全部")
+                .accessibilityIdentifier("service.includeInStartAll.\(service.id.uuidString.lowercased())")
+
+                Menu {
+                    Button {
+                        viewModel.beginEditingService(workspaceID: workspace.id, serviceID: service.id)
+                    } label: {
+                        Label("编辑服务", systemImage: "pencil")
+                    }
+                    .disabled(locked)
+
+                    Divider()
+
+                    Button(role: .destructive) {
+                        servicePendingDeletion = service
+                    } label: {
+                        Label("删除服务", systemImage: "trash")
+                    }
+                    .disabled(locked)
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(DevBarTheme.textSecondary)
+                        .frame(width: 30, height: 32)
+                        .contentShape(Rectangle())
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("服务操作")
+                .accessibilityLabel("服务操作 \(service.name)")
+                .accessibilityIdentifier("service.actions.\(service.id.uuidString.lowercased())")
 
                 Image(systemName: "line.3.horizontal")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(DevBarTheme.textSecondary)
+                    .foregroundStyle(locked ? DevBarTheme.textSecondary.opacity(0.45) : DevBarTheme.textSecondary)
+                    .frame(width: 28, height: 36)
+                    .contentShape(Rectangle())
+                    .gesture(serviceDragGesture(for: service))
+                    .help(locked ? "服务运行中，无法排序" : "拖拽调整顺序")
+                    .accessibilityLabel("拖拽排序 \(service.name)")
             }
-            .frame(width: 24, height: 88)
-            .contentShape(Rectangle())
-            .offset(x: 11)
-            .gesture(
-                DragGesture(minimumDistance: 3, coordinateSpace: .named("service-list"))
-                    .onChanged { value in
-                        draggedServiceID = service.id
-                        serviceDragOffset = clampedServiceDragOffset(
-                            value.translation.height,
-                            for: service.id
-                        )
+            .padding(.horizontal, 14)
+            .frame(minHeight: 76)
+
+            if expandedServiceIDs.contains(service.id) {
+                HStack(spacing: 12) {
+                    Image(systemName: "terminal")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(DevBarTheme.textSecondary)
+                        .frame(width: 32, height: 32)
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("启动命令")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(DevBarTheme.textSecondary)
+                        Text(service.command.isEmpty ? "未设置" : service.command)
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(DevBarTheme.textPrimary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
                     }
-                    .onEnded { _ in
-                        finishServiceDrag(service.id)
-                    }
-            )
-            .accessibilityLabel("拖拽排序 \(service.name)")
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 14)
+                .frame(height: 62)
+                .background(Color(devBarHex: workspace.tintHex).opacity(0.045), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(DevBarTheme.separator.opacity(0.45), lineWidth: 0.75)
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 12)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+                .accessibilityIdentifier("service.command.\(service.id.uuidString.lowercased())")
+            }
+        }
+        .background(
+            hoveredServiceID == service.id
+                ? Color(devBarHex: workspace.tintHex).opacity(0.035)
+                : Color.clear
+        )
+        .onHover { isHovered in
+            hoveredServiceID = isHovered ? service.id : nil
         }
         .offset(y: draggedServiceID == service.id ? serviceDragOffset : 0)
         .zIndex(draggedServiceID == service.id ? 1 : 0)
@@ -411,11 +451,38 @@ private struct WorkspaceSettingsContent: View {
         }
     }
 
+    private func toggleServiceExpansion(_ serviceID: UUID) {
+        if expandedServiceIDs.contains(serviceID) {
+            expandedServiceIDs.remove(serviceID)
+        } else {
+            expandedServiceIDs.insert(serviceID)
+        }
+    }
+
+    private func serviceDragGesture(for service: ServiceConfig) -> some Gesture {
+        DragGesture(minimumDistance: 3, coordinateSpace: .named("service-list"))
+            .onChanged { value in
+                guard !locked else { return }
+                if draggedServiceID == nil {
+                    expandedServiceIDs.removeAll()
+                }
+                draggedServiceID = service.id
+                serviceDragOffset = clampedServiceDragOffset(
+                    value.translation.height,
+                    for: service.id
+                )
+            }
+            .onEnded { _ in
+                guard !locked else { return }
+                finishServiceDrag(service.id)
+            }
+    }
+
     private func clampedServiceDragOffset(_ proposedOffset: CGFloat, for serviceID: UUID) -> CGFloat {
         guard let index = workspace.services.firstIndex(where: { $0.id == serviceID }) else {
             return 0
         }
-        let rowStride: CGFloat = 100
+        let rowStride: CGFloat = 77
         let minimum = -CGFloat(index) * rowStride
         let maximum = CGFloat(workspace.services.count - index - 1) * rowStride
         return min(max(proposedOffset, minimum), maximum)
@@ -428,7 +495,7 @@ private struct WorkspaceSettingsContent: View {
             return
         }
 
-        let rowStride: CGFloat = 100
+        let rowStride: CGFloat = 77
         let proposedIndex = sourceIndex + Int((serviceDragOffset / rowStride).rounded())
         let targetIndex = min(max(proposedIndex, 0), workspace.services.count - 1)
 
@@ -446,40 +513,6 @@ private struct WorkspaceSettingsContent: View {
                 relativeTo: targetServiceID,
                 placeAfterTarget: targetIndex > sourceIndex
             )
-        }
-    }
-
-    private var detailDivider: some View {
-        Divider()
-            .frame(height: 24)
-            .padding(.horizontal, 12)
-    }
-
-    private func serviceDetail(
-        title: String,
-        systemImage: String,
-        value: String,
-        monospaced: Bool = false
-    ) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: systemImage)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(DevBarTheme.textSecondary)
-                .frame(width: 18)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(DevBarTheme.textSecondary)
-                Text(value)
-                    .font(
-                        monospaced
-                            ? .system(size: 11, weight: .semibold, design: .monospaced)
-                            : .system(size: 11, weight: .medium)
-                    )
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
         }
     }
 
@@ -507,43 +540,30 @@ private struct WorkspaceSettingsContent: View {
     }
 
     @ViewBuilder
-    private func healthDetail(_ health: HealthCheckConfig) -> some View {
-        switch health {
-        case .none:
-            serviceDetail(title: "健康检查", systemImage: "waveform.path.ecg", value: "无检查")
-        case let .http(url):
-            HStack(spacing: 6) {
-                healthKindBadge("HTTP", color: .blue)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("健康检查")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(DevBarTheme.textSecondary)
-                    Text(url.host.map { $0 + url.path } ?? url.absoluteString)
-                        .font(.system(size: 12, weight: .medium))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-            }
-        case let .tcp(host, port):
-            HStack(spacing: 6) {
-                healthKindBadge("TCP", color: .green)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("健康检查")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(DevBarTheme.textSecondary)
-                    Text(verbatim: tcpEndpoint(host: host, port: port))
-                        .font(.system(size: 12, weight: .medium))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+    private func compactHealthDetail(_ health: HealthCheckConfig) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "waveform.path.ecg")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(DevBarTheme.textSecondary)
+                .frame(width: 18)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("健康检查")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(DevBarTheme.textSecondary)
+
+                switch health {
+                case .none:
+                    Text("无检查")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(DevBarTheme.textPrimary)
+                case .http:
+                    healthKindBadge("HTTP", color: .blue)
+                case .tcp:
+                    healthKindBadge("TCP", color: .green)
                 }
             }
         }
-    }
-
-    private func tcpEndpoint(host: String, port: Int) -> String {
-        host == "127.0.0.1" || host == "localhost"
-            ? String(port)
-            : "\(host):\(String(port))"
     }
 
     private func healthKindBadge(_ title: String, color: Color) -> some View {

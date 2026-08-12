@@ -77,6 +77,7 @@ final class LogViewModel {
     private let openDirectoryAction: OpenDirectoryAction
     private let deleteHistoryAction: DeleteHistoryAction
     private let refreshInterval: Duration
+    let maximumEntries: Int
     private var selectionGeneration: UInt64 = 0
     private var didStart = false
     @ObservationIgnored nonisolated(unsafe) private var refreshTask: Task<Void, Never>?
@@ -85,6 +86,7 @@ final class LogViewModel {
         services: [LogServiceDescriptor],
         selectedServiceID: UUID? = nil,
         store: any LogWindowStoring,
+        maximumEntries: Int = PreferencesConfig.defaultLogViewerEntryLimit,
         refreshInterval: Duration = .milliseconds(350),
         openDirectory: @escaping OpenDirectoryAction,
         deleteHistory: @escaping DeleteHistoryAction
@@ -94,6 +96,10 @@ final class LogViewModel {
             services.contains(where: { $0.serviceID == requested }) ? requested : nil
         } ?? services.first?.serviceID
         self.store = store
+        self.maximumEntries = min(
+            max(maximumEntries, PreferencesConfig.logViewerEntryLimitRange.lowerBound),
+            PreferencesConfig.logViewerEntryLimitRange.upperBound
+        )
         self.refreshInterval = refreshInterval
         openDirectoryAction = openDirectory
         deleteHistoryAction = deleteHistory
@@ -176,12 +182,12 @@ final class LogViewModel {
         let entries = await store.loadRecent(
             workspaceID: selectedService.workspaceID,
             serviceID: selectedService.serviceID,
-            limit: LogStore.defaultMaximumEntries
+            limit: maximumEntries
         )
         guard generation == selectionGeneration,
               selectedService.serviceID == selectedServiceID
         else { return }
-        loadedEntries = Array(entries.suffix(LogStore.defaultMaximumEntries))
+        loadedEntries = Array(entries.suffix(maximumEntries))
         isLoading = false
     }
 
@@ -192,7 +198,7 @@ final class LogViewModel {
         guard generation == selectionGeneration,
               selectedService.serviceID == selectedServiceID
         else { return }
-        let latestEntries = Array(entries.suffix(LogStore.defaultMaximumEntries))
+        let latestEntries = Array(entries.suffix(maximumEntries))
         guard latestEntries != loadedEntries else { return }
         loadedEntries = latestEntries
     }

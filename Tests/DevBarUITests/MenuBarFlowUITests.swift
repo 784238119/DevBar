@@ -31,6 +31,8 @@ final class MenuBarFlowUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Web"].exists)
         XCTAssertTrue(app.staticTexts["Server"].exists)
         XCTAssertTrue(app.buttons["启动全部"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["内存占用 内存 --"].exists)
+        XCTAssertFalse(app.staticTexts["npm run dev"].exists)
 
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "DevBar Menu Panel"
@@ -98,6 +100,24 @@ final class MenuBarFlowUITests: XCTestCase {
         XCTAssertFalse(app.buttons["config.save"].exists)
         XCTAssertFalse(app.buttons["config.discard"].exists)
         XCTAssertFalse(app.buttons["config.check"].exists)
+    }
+
+    func testIncludeInStartAllToggleRespondsAndPersists() throws {
+        let app = try launch(configurationJSON: Self.museCubeConfiguration)
+        XCTAssertTrue(app.buttons["menu.settings"].waitForExistence(timeout: 3))
+        app.buttons["menu.settings"].click()
+
+        let toggle = app.descendants(matching: .any)[
+            "service.includeInStartAll.22222222-2222-2222-2222-222222222222"
+        ]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 3))
+        XCTAssertEqual(toggle.value as? Int, 1)
+
+        toggle.click()
+
+        let changed = NSPredicate(format: "value == 0")
+        expectation(for: changed, evaluatedWith: toggle)
+        waitForExpectations(timeout: 2)
     }
 
     func testLogsWindowOpensForSelectedService() throws {

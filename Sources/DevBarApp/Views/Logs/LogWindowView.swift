@@ -5,6 +5,8 @@ import SwiftUI
 struct LogWindowView: View {
     @Bindable var viewModel: LogViewModel
     @State private var showsDeleteConfirmation = false
+    @State private var scrollToLatestRequest = 0
+    @State private var resourceMonitor = SystemResourceMonitor()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,6 +27,7 @@ struct LogWindowView: View {
         .background(background.ignoresSafeArea())
         .foregroundStyle(DevBarTheme.textPrimary)
         .task { await viewModel.start() }
+        .task { await resourceMonitor.start() }
         .confirmationDialog(
             "删除所选服务的日志历史？",
             isPresented: $showsDeleteConfirmation,
@@ -47,7 +50,7 @@ struct LogWindowView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("服务日志")
                         .font(.system(size: 22, weight: .bold))
-                    Text("最多显示最近 \(LogStore.defaultMaximumEntries) 条")
+                    Text("最多显示最近 \(viewModel.maximumEntries) 条")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(DevBarTheme.textSecondary)
                 }
@@ -104,10 +107,62 @@ struct LogWindowView: View {
                 .disabled(viewModel.selectedService == nil)
                 .accessibilityIdentifier("logs.deleteHistory")
             }
+
+            logMetrics
         }
         .padding(.horizontal, 22)
         .padding(.vertical, 18)
         .background(DevBarTheme.surfaceSubtle)
+    }
+
+    private var logMetrics: some View {
+        HStack(spacing: 0) {
+            logMetric("已加载", value: "\(viewModel.loadedEntries.count) 条", symbol: "text.page")
+            metricDivider
+            logMetric("日志内存", value: loadedLogMemoryText, symbol: "memorychip")
+            metricDivider
+            logMetric("DevBar", value: resourceMonitor.applicationMemoryText, symbol: "gauge.with.dots.needle.33percent")
+            metricDivider
+            logMetric("系统内存", value: resourceMonitor.systemMemoryUsageText, symbol: "chart.bar.fill")
+        }
+        .frame(height: 48)
+        .background(DevBarTheme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(DevBarTheme.separator.opacity(0.68), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+    }
+
+    private var metricDivider: some View {
+        Divider()
+            .frame(height: 25)
+            .overlay(DevBarTheme.separator.opacity(0.62))
+    }
+
+    private func logMetric(_ title: String, value: String, symbol: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(DevBarTheme.accentMiddle)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(DevBarTheme.textSecondary)
+                Text(value)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+            }
+            Spacer(minLength: 4)
+        }
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity)
+    }
+
+    private var loadedLogMemoryText: String {
+        let bytes = viewModel.loadedEntries.reduce(into: 0) { total, entry in
+            total += entry.text.utf8.count
+        }
+        return ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .memory)
     }
 
     private var servicePicker: some View {
@@ -151,7 +206,10 @@ struct LogWindowView: View {
                 description: Text(viewModel.searchQuery.isEmpty ? "服务输出会实时显示在这里。" : "搜索只针对当前已加载的日志。")
             )
         } else {
-            TerminalOutputView(viewModel: viewModel)
+            TerminalOutputView(
+                viewModel: viewModel,
+                scrollToLatestRequest: scrollToLatestRequest
+            )
         }
     }
 
@@ -175,13 +233,34 @@ struct LogWindowView: View {
                 }
             }
             Spacer()
-            if viewModel.isAutoScrollPaused {
-                Label("自动滚动已暂停", systemImage: "pause.circle.fill")
-                    .foregroundStyle(Color.orange.opacity(0.9))
-            } else {
-                Label("自动滚动", systemImage: "arrow.down.to.line.compact")
-                    .foregroundStyle(DevBarTheme.textSecondary)
+            Button {
+                scrollToLatestRequest &+= 1
+            } label: {
+                Label(
+                    viewModel.isAutoScrollPaused ? "自动滚动已暂停" : "自动滚动",
+                    systemImage: viewModel.isAutoScrollPaused
+                        ? "pause.circle.fill"
+                        : "arrow.down.to.line.compact"
+                )
             }
+            .buttonStyle(.plain)
+            .foregroundStyle(
+                viewModel.isAutoScrollPaused
+                    ? Color.orange.opacity(0.9)
+                    : DevBarTheme.textSecondary
+            )
+            .padding(.horizontal, 10)
+            .frame(height: 28)
+            .background(DevBarTheme.surface, in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(DevBarTheme.separator.opacity(0.82), lineWidth: 1)
+            }
+            .contentShape(Rectangle())
+            .help("滚动到最新日志")
+            .accessibilityLabel("滚动到最新日志")
+            .accessibilityIdentifier("logs.scrollToLatest")
+            .disabled(viewModel.filteredEntries.isEmpty)
         }
         .font(.system(size: 11, weight: .medium))
         .padding(.horizontal, 22)
@@ -192,10 +271,10 @@ struct LogWindowView: View {
 
     private func toolbarButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Label(title, systemImage: systemImage)
+            Image(systemName: systemImage)
                 .font(.system(size: 12, weight: .semibold))
-                .padding(.horizontal, 11)
-                .frame(height: 36)
+                .frame(width: 36, height: 36)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .background(DevBarTheme.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -203,6 +282,8 @@ struct LogWindowView: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .stroke(DevBarTheme.separator.opacity(0.74), lineWidth: 1)
         )
+        .help(title)
+        .accessibilityLabel(title)
         .disabled(viewModel.selectedService == nil)
     }
 
@@ -228,10 +309,12 @@ struct LogWindowView: View {
 private struct TerminalOutputView: NSViewRepresentable {
     let entries: [LogEntry]
     let followsOutput: Bool
+    let scrollToLatestRequest: Int
 
-    init(viewModel: LogViewModel) {
+    init(viewModel: LogViewModel, scrollToLatestRequest: Int) {
         entries = viewModel.filteredEntries
         followsOutput = !viewModel.isAutoScrollPaused
+        self.scrollToLatestRequest = scrollToLatestRequest
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -266,7 +349,8 @@ private struct TerminalOutputView: NSViewRepresentable {
         scrollView.documentView = textView
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
-        scrollView.autohidesScrollers = true
+        scrollView.autohidesScrollers = false
+        scrollView.scrollerStyle = .legacy
         scrollView.drawsBackground = true
         scrollView.backgroundColor = NSColor(LogTerminalTheme.background)
         return scrollView
@@ -274,7 +358,15 @@ private struct TerminalOutputView: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? NSTextView else { return }
-        guard entries != context.coordinator.entries else { return }
+
+        let shouldScrollToLatest = scrollToLatestRequest != context.coordinator.scrollToLatestRequest
+        context.coordinator.scrollToLatestRequest = scrollToLatestRequest
+        guard entries != context.coordinator.entries else {
+            if shouldScrollToLatest {
+                scrollToLatest(textView)
+            }
+            return
+        }
 
         let wasAtBottom = isAtBottom(scrollView)
         let storage = textView.textStorage ?? NSTextStorage()
@@ -287,9 +379,14 @@ private struct TerminalOutputView: NSViewRepresentable {
         }
         context.coordinator.entries = entries
 
-        if followsOutput && wasAtBottom {
-            textView.scrollRangeToVisible(NSRange(location: storage.length, length: 0))
+        if shouldScrollToLatest || (followsOutput && wasAtBottom) {
+            scrollToLatest(textView)
         }
+    }
+
+    private func scrollToLatest(_ textView: NSTextView) {
+        let end = textView.textStorage?.length ?? 0
+        textView.scrollRangeToVisible(NSRange(location: end, length: 0))
     }
 
     private func isAtBottom(_ scrollView: NSScrollView) -> Bool {
@@ -309,6 +406,7 @@ private struct TerminalOutputView: NSViewRepresentable {
 
     final class Coordinator {
         var entries: [LogEntry] = []
+        var scrollToLatestRequest = 0
     }
 }
 

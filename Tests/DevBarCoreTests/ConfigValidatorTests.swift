@@ -77,6 +77,16 @@ final class ConfigValidatorTests: XCTestCase {
         XCTAssertEqual(issues.first?.path, "workspaces[0].services[0].healthCheck.url")
     }
 
+    func testRejectsLogViewerEntryLimitAboveMaximum() {
+        var config = validConfig()
+        config.preferences.logViewerEntryLimit = 10_001
+
+        let issues = ConfigValidator(fileManager: .default).validate(config)
+
+        XCTAssertEqual(issues.map(\.path), ["preferences.logViewerEntryLimit"])
+        XCTAssertEqual(issues.map(\.code), [.invalidPreferenceRange])
+    }
+
     func testValidConfigurationHasNoIssues() {
         XCTAssertTrue(ConfigValidator(fileManager: .default).validate(validConfig()).isEmpty)
     }
@@ -107,14 +117,17 @@ final class ConfigValidatorTests: XCTestCase {
     }
 
     func testLegacyTintRemainsValid() {
-        var config = validConfig()
-        config.workspaces[0].tintHex = "#FF7A59"
+        for tint in ["#FF6B58", "#FF7A59"] {
+            var config = validConfig()
+            config.workspaces[0].tintHex = tint
 
-        XCTAssertFalse(
-            ConfigValidator(fileManager: .default)
-                .validate(config)
-                .contains(where: { $0.code == .invalidTintHex })
-        )
+            XCTAssertFalse(
+                ConfigValidator(fileManager: .default)
+                    .validate(config)
+                    .contains(where: { $0.code == .invalidTintHex }),
+                "\(tint) was used by an earlier DevBar release and must remain valid"
+            )
+        }
     }
 
     private func validConfig() -> AppConfig {
