@@ -92,6 +92,7 @@ xcodebuild \
 - 主配置：`~/Library/Application Support/DevBar/config.json`
 - 配置备份：`~/Library/Application Support/DevBar/config.json.bak`
 - 默认日志目录：由偏好设置中的“日志目录”决定
+- 服务日志按 `工作区 UUID/服务 UUID/YYYY/MM/DD/` 分目录保存；默认保留 7 天，并在日志活动时定期清理过期日期目录
 
 配置文件当前 schema 版本为 `1`。不要手工写入更高版本；应用会拒绝无法理解的未来 schema，避免静默破坏配置。
 

@@ -119,7 +119,8 @@ final class LogStoreTests: XCTestCase {
         try await store.configure(
             logDirectory: customRoot.path,
             logFileSizeMiB: 1,
-            fileCount: 3
+            fileCount: 3,
+            retentionDays: 7
         )
         try await store.prepare(workspaceID: workspaceID, serviceID: serviceID)
         await store.append(
@@ -131,15 +132,69 @@ final class LogStoreTests: XCTestCase {
         let currentLog = customRoot
             .appendingPathComponent(workspaceID.uuidString.lowercased(), isDirectory: true)
             .appendingPathComponent(serviceID.uuidString.lowercased(), isDirectory: true)
+            .appendingPathComponent(datePath(Date()), isDirectory: true)
             .appendingPathComponent("current.log", isDirectory: false)
         XCTAssertTrue(FileManager.default.fileExists(atPath: currentLog.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: logDirectory().path))
+    }
+
+    func testConfigureRemovesExpiredDatedDirectoriesAndKeepsRetentionWindow() async throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let currentDate = Date(timeIntervalSince1970: 1_787_529_600) // 2026-08-24 UTC
+        let serviceRoot = paths.logsRootURL
+            .appendingPathComponent(workspaceID.uuidString.lowercased(), isDirectory: true)
+            .appendingPathComponent(serviceID.uuidString.lowercased(), isDirectory: true)
+        let expired = serviceRoot.appendingPathComponent("2026/08/17", isDirectory: true)
+        let retained = serviceRoot.appendingPathComponent("2026/08/18", isDirectory: true)
+        try FileManager.default.createDirectory(at: expired, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: retained, withIntermediateDirectories: true)
+
+        let store = LogStore(paths: paths, now: { currentDate }, calendar: calendar)
+        try await store.configure(
+            logDirectory: PreferencesConfig.defaultLogDirectory,
+            logFileSizeMiB: 5,
+            fileCount: 3,
+            retentionDays: 7
+        )
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: expired.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: retained.path))
+    }
+
+    func testLoadRecentCombinesDatedDirectoriesInChronologicalOrder() async throws {
+        let serviceRoot = paths.logsRootURL
+            .appendingPathComponent(workspaceID.uuidString.lowercased(), isDirectory: true)
+            .appendingPathComponent(serviceID.uuidString.lowercased(), isDirectory: true)
+        let first = try RotatingLogWriter(
+            directory: serviceRoot.appendingPathComponent("2026/08/11", isDirectory: true),
+            maximumFileSizeBytes: 1_024,
+            fileCount: 3
+        )
+        let second = try RotatingLogWriter(
+            directory: serviceRoot.appendingPathComponent("2026/08/12", isDirectory: true),
+            maximumFileSizeBytes: 1_024,
+            fileCount: 3
+        )
+        try first.append(LogEntry(stream: .stdout, text: "yesterday"))
+        try second.append(LogEntry(stream: .stdout, text: "today"))
+
+        let store = LogStore(paths: paths, maximumEntries: 10, maximumFileSizeBytes: 1_024, fileCount: 3)
+        let loaded = await store.loadRecent(workspaceID: workspaceID, serviceID: serviceID, limit: 10)
+
+        XCTAssertEqual(loaded.map(\.text), ["yesterday", "today"])
     }
 
     private func logDirectory() -> URL {
         paths.logsRootURL
             .appendingPathComponent(workspaceID.uuidString.lowercased(), isDirectory: true)
             .appendingPathComponent(serviceID.uuidString.lowercased(), isDirectory: true)
+            .appendingPathComponent(datePath(Date()), isDirectory: true)
+    }
+
+    private func datePath(_ date: Date) -> String {
+        let components = Calendar.autoupdatingCurrent.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d/%02d/%02d", components.year!, components.month!, components.day!)
     }
 }
 

@@ -157,13 +157,19 @@ struct PreferencesView: View {
                             suffix: "个"
                         )
                         preferenceStepper(
+                            "日志保留天数",
+                            value: $viewModel.draft.preferences.logRetentionDays,
+                            range: PreferencesConfig.logRetentionDaysRange,
+                            suffix: "天"
+                        )
+                        preferenceStepper(
                             "日志加载条数",
                             value: $viewModel.draft.preferences.logViewerEntryLimit,
                             range: PreferencesConfig.logViewerEntryLimitRange,
                             step: 100,
                             suffix: "条"
                         )
-                        Text("日志窗口最多加载 10,000 条；降低此值可减少大日志的界面占用。")
+                        Text("日志按年/月/日分目录保存，并自动清理超过保留天数的目录。日志窗口最多加载 10,000 条。")
                             .font(.system(size: 11))
                             .foregroundStyle(DevBarTheme.textSecondary)
                     }

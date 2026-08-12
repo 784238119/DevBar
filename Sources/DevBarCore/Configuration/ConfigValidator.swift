@@ -94,6 +94,7 @@ public struct ConfigValidator {
         }
         validateRange(preferences.logFileSizeMiB, range: 1...100, path: "preferences.logFileSizeMiB", label: "Log file size", issues: &issues)
         validateRange(preferences.logFileCount, range: 1...10, path: "preferences.logFileCount", label: "Log file count", issues: &issues)
+        validateRange(preferences.logRetentionDays, range: PreferencesConfig.logRetentionDaysRange, path: "preferences.logRetentionDays", label: "Log retention days", issues: &issues)
         validateRange(
             preferences.logViewerEntryLimit,
             range: PreferencesConfig.logViewerEntryLimitRange,

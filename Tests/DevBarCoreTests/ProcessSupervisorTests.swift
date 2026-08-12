@@ -215,7 +215,8 @@ final class ProcessSupervisorTests: XCTestCase {
             .init(
                 logDirectory: PreferencesConfig.defaultLogDirectory,
                 logFileSizeMiB: 17,
-                fileCount: 6
+                fileCount: 6,
+                retentionDays: PreferencesConfig.defaultLogRetentionDays
             )
         ])
     }
@@ -406,6 +407,7 @@ private actor FakeLogStore: ServiceLogStoring {
         let logDirectory: String
         let logFileSizeMiB: Int
         let fileCount: Int
+        let retentionDays: Int
     }
 
     struct Appended: Equatable, Sendable {
@@ -424,12 +426,13 @@ private actor FakeLogStore: ServiceLogStoring {
         self.prepareError = prepareError
     }
 
-    func configure(logDirectory: String, logFileSizeMiB: Int, fileCount: Int) async throws {
+    func configure(logDirectory: String, logFileSizeMiB: Int, fileCount: Int, retentionDays: Int) async throws {
         configurations.append(
             .init(
                 logDirectory: logDirectory,
                 logFileSizeMiB: logFileSizeMiB,
-                fileCount: fileCount
+                fileCount: fileCount,
+                retentionDays: retentionDays
             )
         )
     }
