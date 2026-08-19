@@ -85,7 +85,6 @@ private struct WorkspaceSettingsContent: View {
                         Image(systemName: "folder.badge.gearshape")
                     }
                     .buttonStyle(.borderless)
-                    .disabled(locked)
                     .accessibilityLabel("重新选择工作区目录")
                 }
                 .font(.system(size: 12))
@@ -96,7 +95,7 @@ private struct WorkspaceSettingsContent: View {
             Spacer()
 
             if locked {
-                Label("服务运行中，目录、环境和删除已锁定", systemImage: "lock.fill")
+                Label("服务运行中，保存后的配置将在下次启动时生效", systemImage: "arrow.triangle.2.circlepath")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.orange)
                     .padding(.horizontal, 12)
@@ -181,14 +180,13 @@ private struct WorkspaceSettingsContent: View {
                                 .foregroundStyle(DevBarTheme.textSecondary)
                         }
                         Spacer(minLength: 16)
-                        Image(systemName: locked ? "lock.fill" : "chevron.right")
+                        Image(systemName: "chevron.right")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(locked ? Color.orange : DevBarTheme.textSecondary)
+                            .foregroundStyle(DevBarTheme.textSecondary)
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .disabled(locked)
                 .accessibilityIdentifier("workspace.environment.open")
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -196,7 +194,7 @@ private struct WorkspaceSettingsContent: View {
         .sheet(isPresented: $showsEnvironmentEditor) {
             EnvironmentEditorSheet(
                 entries: workspace.environment,
-                disabled: locked,
+                showsRestartNotice: locked,
                 issueForIndex: { index in
                     viewModel.issue(at: "\(workspacePath).environment[\(index)].key")
                 },
@@ -319,8 +317,7 @@ private struct WorkspaceSettingsContent: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .disabled(locked)
-                .help(locked ? "请先停止服务再编辑" : "编辑服务")
+                .help("编辑服务")
                 .accessibilityIdentifier("service.edit.\(service.id.uuidString.lowercased())")
 
                 compactHealthDetail(service.healthCheck)
@@ -345,7 +342,6 @@ private struct WorkspaceSettingsContent: View {
                     } label: {
                         Label("编辑服务", systemImage: "pencil")
                     }
-                    .disabled(locked)
 
                     Divider()
 
@@ -371,11 +367,11 @@ private struct WorkspaceSettingsContent: View {
 
                 Image(systemName: "line.3.horizontal")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(locked ? DevBarTheme.textSecondary.opacity(0.45) : DevBarTheme.textSecondary)
+                    .foregroundStyle(DevBarTheme.textSecondary)
                     .frame(width: 28, height: 36)
                     .contentShape(Rectangle())
                     .gesture(serviceDragGesture(for: service))
-                    .help(locked ? "服务运行中，无法排序" : "拖拽调整顺序")
+                    .help("拖拽调整顺序")
                     .accessibilityLabel("拖拽排序 \(service.name)")
             }
             .padding(.horizontal, 14)
@@ -462,7 +458,6 @@ private struct WorkspaceSettingsContent: View {
     private func serviceDragGesture(for service: ServiceConfig) -> some Gesture {
         DragGesture(minimumDistance: 3, coordinateSpace: .named("service-list"))
             .onChanged { value in
-                guard !locked else { return }
                 if draggedServiceID == nil {
                     expandedServiceIDs.removeAll()
                 }
@@ -473,7 +468,6 @@ private struct WorkspaceSettingsContent: View {
                 )
             }
             .onEnded { _ in
-                guard !locked else { return }
                 finishServiceDrag(service.id)
             }
     }

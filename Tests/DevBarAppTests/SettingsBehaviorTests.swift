@@ -88,6 +88,62 @@ final class SettingsBehaviorTests: XCTestCase {
         )
     }
 
+    func testRunningServiceAllowsSavingUpdatedServiceConfigurationForNextStart() async throws {
+        let service = makeService(command: "original")
+        let workspace = makeWorkspace(services: [service])
+        var committedConfiguration = AppConfig(workspaces: [workspace], preferences: .default)
+        let viewModel = SettingsViewModel(
+            configuration: committedConfiguration,
+            workspaceLocked: { _ in true },
+            commit: { event in
+                committedConfiguration = self.apply(event, to: committedConfiguration)
+                return committedConfiguration
+            },
+            refreshShell: { _ in }
+        )
+        viewModel.beginEditingService(workspaceID: workspace.id, serviceID: service.id)
+        var editor = try XCTUnwrap(viewModel.serviceEditor)
+        editor.service.command = "replacement"
+        editor.service.environment = [.init(key: "PORT", value: "9000")]
+
+        let committed = await viewModel.commitServiceEditor(
+            workspaceID: workspace.id,
+            draft: editor
+        )
+
+        XCTAssertTrue(committed)
+        XCTAssertEqual(viewModel.baseline.workspaces[0].services[0].command, "replacement")
+        XCTAssertEqual(
+            viewModel.baseline.workspaces[0].services[0].environment,
+            [.init(key: "PORT", value: "9000")]
+        )
+    }
+
+    func testRunningServiceAllowsSavingWorkspaceEnvironmentForNextStart() async {
+        let workspace = makeWorkspace()
+        var committedConfiguration = AppConfig(workspaces: [workspace], preferences: .default)
+        let viewModel = SettingsViewModel(
+            configuration: committedConfiguration,
+            workspaceLocked: { _ in true },
+            commit: { event in
+                committedConfiguration = self.apply(event, to: committedConfiguration)
+                return committedConfiguration
+            },
+            refreshShell: { _ in }
+        )
+
+        let committed = await viewModel.commitWorkspaceEnvironment(
+            workspaceID: workspace.id,
+            entries: [.init(key: "API_URL", value: "http://localhost:9000")]
+        )
+
+        XCTAssertTrue(committed)
+        XCTAssertEqual(
+            viewModel.baseline.workspaces[0].environment,
+            [.init(key: "API_URL", value: "http://localhost:9000")]
+        )
+    }
+
     func testCommitFailsSafelyWhenWorkspaceDisappears() async throws {
         let service = makeService(command: "original")
         let workspace = makeWorkspace(services: [service])

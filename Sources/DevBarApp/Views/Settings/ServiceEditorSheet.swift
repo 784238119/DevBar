@@ -57,7 +57,7 @@ struct ServiceEditorSheet: View {
             Divider().overlay(DevBarTheme.separator)
             HStack {
                 if locked {
-                    Label("运行中：目录和环境变量已锁定", systemImage: "lock.fill")
+                    Label("运行中：保存后的配置将在下次启动时生效", systemImage: "arrow.triangle.2.circlepath")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.orange)
                 }
@@ -111,7 +111,6 @@ struct ServiceEditorSheet: View {
                             )
                         }
                     }
-                    .disabled(locked)
                 }
 
                 Toggle("加入启动全部", isOn: $service.includeInStartAll)
@@ -146,7 +145,7 @@ struct ServiceEditorSheet: View {
                     .font(.system(size: 14, weight: .bold))
                 EnvironmentEditor(
                     entries: $service.environment,
-                    disabled: locked,
+                    disabled: false,
                     issueForIndex: { _ in nil }
                 )
             }

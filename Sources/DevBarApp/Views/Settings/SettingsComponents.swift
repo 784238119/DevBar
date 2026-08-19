@@ -172,7 +172,7 @@ struct EnvironmentEditor: View {
 
 struct EnvironmentEditorSheet: View {
     @State private var entries: [EnvironmentEntry]
-    let disabled: Bool
+    let showsRestartNotice: Bool
     let issueForIndex: (Int) -> ValidationIssue?
     let save: ([EnvironmentEntry]) async -> Bool
     let close: () -> Void
@@ -180,13 +180,13 @@ struct EnvironmentEditorSheet: View {
 
     init(
         entries: [EnvironmentEntry],
-        disabled: Bool,
+        showsRestartNotice: Bool,
         issueForIndex: @escaping (Int) -> ValidationIssue?,
         save: @escaping ([EnvironmentEntry]) async -> Bool,
         close: @escaping () -> Void
     ) {
         _entries = State(initialValue: entries)
-        self.disabled = disabled
+        self.showsRestartNotice = showsRestartNotice
         self.issueForIndex = issueForIndex
         self.save = save
         self.close = close
@@ -211,7 +211,6 @@ struct EnvironmentEditorSheet: View {
                     Label("添加变量", systemImage: "plus")
                 }
                 .buttonStyle(.bordered)
-                .disabled(disabled)
                 .accessibilityIdentifier("environment.add")
 
                 Button("取消", action: close)
@@ -228,7 +227,7 @@ struct EnvironmentEditorSheet: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(DevBarTheme.accentMiddle)
-                .disabled(disabled || isSaving)
+                .disabled(isSaving)
             }
             .padding(.horizontal, 22)
             .frame(height: 68)
@@ -238,15 +237,15 @@ struct EnvironmentEditorSheet: View {
             ScrollView {
                 EnvironmentEditor(
                     entries: $entries,
-                    disabled: disabled,
+                    disabled: false,
                     issueForIndex: issueForIndex,
                     showsAddButton: false
                 )
                 .padding(22)
             }
 
-            if disabled {
-                Label("服务运行中，环境变量已锁定", systemImage: "lock.fill")
+            if showsRestartNotice {
+                Label("服务运行中，保存后的环境变量将在下次启动时生效", systemImage: "arrow.triangle.2.circlepath")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.orange)
                     .frame(maxWidth: .infinity, alignment: .leading)
