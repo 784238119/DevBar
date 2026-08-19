@@ -208,8 +208,7 @@ final class SettingsViewModel {
     }
 
     func chooseWorkspaceRoot(_ workspaceID: UUID) async {
-        guard !isLocked(workspaceID),
-              let index = draft.workspaces.firstIndex(where: { $0.id == workspaceID }),
+        guard let index = draft.workspaces.firstIndex(where: { $0.id == workspaceID }),
               let directory = await directoryPicker.chooseDirectory()
         else { return }
         draft.workspaces[index].rootDirectory = directory.standardizedFileURL.path
@@ -290,8 +289,7 @@ final class SettingsViewModel {
         workspaceID: UUID,
         for service: ServiceConfig
     ) async -> ServiceConfig {
-        guard !isLocked(workspaceID),
-              let root = draft.workspaces.first(where: { $0.id == workspaceID })?.rootDirectory,
+        guard let root = draft.workspaces.first(where: { $0.id == workspaceID })?.rootDirectory,
               let directory = await directoryPicker.chooseDirectory()
         else { return service }
         var updated = service
@@ -304,10 +302,8 @@ final class SettingsViewModel {
         workspaceID: UUID,
         draft editor: ServiceEditorDraft
     ) async -> Bool {
-        guard let workspaceIndex = draft.workspaces.firstIndex(where: { $0.id == workspaceID }),
-              !isLocked(workspaceID)
-        else {
-            setNotice(.failure("服务所属工作区已不存在或正在运行，无法保存。"))
+        guard let workspaceIndex = draft.workspaces.firstIndex(where: { $0.id == workspaceID }) else {
+            setNotice(.failure("服务所属工作区已不存在，无法保存。"))
             return false
         }
         if let serviceID = editor.serviceID {
