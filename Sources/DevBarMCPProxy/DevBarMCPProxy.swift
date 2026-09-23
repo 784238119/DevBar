@@ -72,6 +72,13 @@ enum DevBarMCPProxy {
                     sessionID = nil
                     throw error
                 }
+                if method == "initialize" {
+                    guard response.statusCode == 200,
+                          let initializedSessionID = response.http.value(forHTTPHeaderField: "Mcp-Session-Id") else {
+                        throw ProxyError.missingSession
+                    }
+                    sessionID = initializedSessionID
+                }
                 guard !response.body.isEmpty else { continue } // Accepted notifications have no response.
                 if let object = try? JSONSerialization.jsonObject(with: response.body) as? [String: Any],
                    let result = object["result"] as? [String: Any],

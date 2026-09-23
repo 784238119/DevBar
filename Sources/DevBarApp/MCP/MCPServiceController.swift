@@ -27,6 +27,8 @@ final class MCPServiceController {
     private(set) var errorMessage: String?
     private(set) var token: String?
 
+    var activeSessionCount: Int { sessions.count }
+
     init(
         appState: AppState,
         supervisor: ProcessSupervisor,

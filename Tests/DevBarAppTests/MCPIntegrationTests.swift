@@ -169,8 +169,13 @@ final class MCPIntegrationTests: XCTestCase {
             let rotated = try await post(initialize, to: controller.endpoint, token: "replacement-token")
             XCTAssertEqual(rotated.status, 200)
 
+            let activeSessionsBeforeStdio = controller.activeSessionCount
             let stdioResponses = try await callStdioProxy(
                 endpoint: controller.endpoint, helperPath: controller.helperPath
+            )
+            XCTAssertEqual(
+                controller.activeSessionCount, activeSessionsBeforeStdio,
+                "The stdio proxy must reuse and close the session returned by initialize."
             )
             XCTAssertEqual(stdioResponses.count, 3)
             XCTAssertEqual(
