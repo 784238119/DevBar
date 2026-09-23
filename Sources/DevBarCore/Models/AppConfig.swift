@@ -199,6 +199,8 @@ public struct PreferencesConfig: Codable, Equatable, Sendable {
     public static let defaultLogRetentionDays = 7
     public static let logRetentionDaysRange = 1...365
     public static let logViewerEntryLimitRange = 100...10_000
+    public static let mcpPortRange = 1_024...65_535
+    public static let defaultMCPPort = 43_171
 
     public var shellPath: String
     public var logDirectory: String
@@ -208,6 +210,7 @@ public struct PreferencesConfig: Codable, Equatable, Sendable {
     public var logViewerEntryLimit: Int
     public var sigintGraceSeconds: Int
     public var sigtermGraceSeconds: Int
+    public var mcpPort: Int
 
     public init(
         shellPath: String,
@@ -217,7 +220,8 @@ public struct PreferencesConfig: Codable, Equatable, Sendable {
         logRetentionDays: Int = PreferencesConfig.defaultLogRetentionDays,
         logViewerEntryLimit: Int = PreferencesConfig.defaultLogViewerEntryLimit,
         sigintGraceSeconds: Int,
-        sigtermGraceSeconds: Int
+        sigtermGraceSeconds: Int,
+        mcpPort: Int = PreferencesConfig.defaultMCPPort
     ) {
         self.shellPath = shellPath
         self.logDirectory = logDirectory
@@ -227,6 +231,7 @@ public struct PreferencesConfig: Codable, Equatable, Sendable {
         self.logViewerEntryLimit = logViewerEntryLimit
         self.sigintGraceSeconds = sigintGraceSeconds
         self.sigtermGraceSeconds = sigtermGraceSeconds
+        self.mcpPort = mcpPort
     }
 
     public static let `default` = PreferencesConfig(
@@ -237,7 +242,8 @@ public struct PreferencesConfig: Codable, Equatable, Sendable {
         logRetentionDays: defaultLogRetentionDays,
         logViewerEntryLimit: defaultLogViewerEntryLimit,
         sigintGraceSeconds: 8,
-        sigtermGraceSeconds: 3
+        sigtermGraceSeconds: 3,
+        mcpPort: defaultMCPPort
     )
 
     private enum CodingKeys: String, CodingKey {
@@ -249,6 +255,7 @@ public struct PreferencesConfig: Codable, Equatable, Sendable {
         case logViewerEntryLimit
         case sigintGraceSeconds
         case sigtermGraceSeconds
+        case mcpPort
     }
 
     public init(from decoder: Decoder) throws {
@@ -264,5 +271,7 @@ public struct PreferencesConfig: Codable, Equatable, Sendable {
             ?? Self.defaultLogViewerEntryLimit
         sigintGraceSeconds = try container.decode(Int.self, forKey: .sigintGraceSeconds)
         sigtermGraceSeconds = try container.decode(Int.self, forKey: .sigtermGraceSeconds)
+        mcpPort = try container.decodeIfPresent(Int.self, forKey: .mcpPort)
+            ?? Self.defaultMCPPort
     }
 }

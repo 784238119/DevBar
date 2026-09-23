@@ -1,11 +1,29 @@
 import AppKit
 import DevBarCore
+import Darwin
+import Foundation
 import SwiftUI
 
 @main
 enum DevBarLauncher {
     static func main() {
         let processInfo = ProcessInfo.processInfo
+        if processInfo.arguments.contains("--mcp-http-headers") {
+            do {
+                guard let token = try MCPTokenStore().load(), !token.isEmpty else {
+                    FileHandle.standardError.write(Data("DevBar MCP token is not available. Start MCP in DevBar first.\n".utf8))
+                    exit(1)
+                }
+                let headers = ["Authorization": "Bearer \(token)"]
+                let data = try JSONSerialization.data(withJSONObject: headers, options: [.sortedKeys])
+                FileHandle.standardOutput.write(data)
+                FileHandle.standardOutput.write(Data("\n".utf8))
+                return
+            } catch {
+                FileHandle.standardError.write(Data("DevBar MCP token lookup failed: \(error.localizedDescription)\n".utf8))
+                exit(1)
+            }
+        }
         let hasUITestEnvironment = processInfo.environment["DEVBAR_TEST_ROOT"] != nil
             && processInfo.environment["DEVBAR_TEST_CONFIG"] != nil
         if processInfo.arguments.contains("--ui-testing") || hasUITestEnvironment {
@@ -345,7 +363,8 @@ private struct SettingsSceneContent: View {
                 SettingsRootView(
                     viewModel: viewModel,
                     presentationPreferences: presentationPreferences,
-                    updateController: updateController
+                    updateController: updateController,
+                    mcpService: dependencies.mcpService
                 )
             } else {
                 ProgressView("正在加载配置…")

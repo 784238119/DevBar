@@ -29,6 +29,20 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
+               BlueprintIdentifier = "5940E48F71513261E9AAA046"
+               BuildableName = "DevBarMCPProxy"
+               BlueprintName = "DevBarMCPProxy"
+               ReferencedContainer = "container:DevBar.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "YES"
+            buildForProfiling = "YES"
+            buildForArchiving = "YES"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
                BlueprintIdentifier = "F3F2F606059EF4FBD52496F7"
                BuildableName = "DevBarRunner"
                BlueprintName = "DevBarRunner"

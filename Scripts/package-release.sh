@@ -10,6 +10,7 @@ architecture="${DEVBAR_RELEASE_ARCH:-arm64}"
 derived_data="${project_root}/.build/ReleaseDerivedData"
 app_path="${derived_data}/Build/Products/Release/DevBar.app"
 runner_path="${app_path}/Contents/Helpers/DevBarRunner"
+mcp_proxy_path="${app_path}/Contents/Helpers/DevBarMCPProxy"
 dist_dir="${project_root}/dist"
 archive_path="${dist_dir}/DevBar-${version}-macos-${architecture}.zip"
 archive_checksum_path="${archive_path}.sha256"
@@ -43,6 +44,11 @@ xcodebuild \
 
 [[ -x "${runner_path}" ]] || {
   print -u2 "Embedded DevBarRunner is missing or not executable."
+  exit 1
+}
+
+[[ -x "${mcp_proxy_path}" ]] || {
+  print -u2 "Embedded DevBarMCPProxy is missing or not executable."
   exit 1
 }
 

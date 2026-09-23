@@ -64,6 +64,7 @@ public actor LogStore {
     private var calendar: Calendar
     private var lastCleanupAt: Date?
     private var entriesByService: [UUID: [LogEntry]] = [:]
+    private var recentReadCache: [UUID: RecentReadSnapshot] = [:]
     private var locations: [UUID: ServiceLocation] = [:]
     private var writers: [UUID: RotatingLogWriter] = [:]
     private var decoders: [SanitizerKey: UTF8StreamDecoder] = [:]
@@ -71,6 +72,11 @@ public actor LogStore {
     private var loadedHistory = Set<UUID>()
     private var warningKeys = Set<String>()
     private var storedWarnings: [LogStoreWarning] = []
+
+    private struct RecentReadSnapshot {
+        let limit: Int
+        let entries: [LogEntry]
+    }
 
     public init(
         paths: AppPaths,
@@ -109,6 +115,7 @@ public actor LogStore {
             ? defaultLogsRootURL
             : configuredRoot
         let maximumFileSizeBytes = logFileSizeMiB * 1_024 * 1_024
+        recentReadCache.removeAll()
         guard self.maximumFileSizeBytes != maximumFileSizeBytes
                 || self.fileCount != fileCount
                 || self.retentionDays != retentionDays
@@ -207,6 +214,27 @@ public actor LogStore {
         entriesByService[serviceID] ?? []
     }
 
+    /// Returns a bounded recent snapshot without changing the log window's history cache.
+    public func readRecent(workspaceID: UUID, serviceID: UUID, limit: Int) -> [LogEntry] {
+        let boundedLimit = min(max(limit, 1), 200)
+        if let inMemory = entriesByService[serviceID], inMemory.count >= boundedLimit {
+            return Array(inMemory.suffix(boundedLimit))
+        }
+        if let cached = recentReadCache[serviceID], cached.limit >= boundedLimit {
+            return Array(cached.entries.suffix(boundedLimit))
+        }
+        do {
+            let records = try readRecentRecords(workspaceID: workspaceID, serviceID: serviceID, limit: boundedLimit)
+            recentReadCache[serviceID] = RecentReadSnapshot(limit: boundedLimit, entries: records)
+            return records.isEmpty
+                ? Array((entriesByService[serviceID] ?? []).suffix(boundedLimit))
+                : records
+        } catch {
+            emitWarning(serviceID: serviceID, kind: .read, message: error.localizedDescription)
+            return Array((entriesByService[serviceID] ?? []).suffix(boundedLimit))
+        }
+    }
+
     public func clearView(serviceID: UUID) {
         entriesByService[serviceID] = []
     }
@@ -215,6 +243,7 @@ public actor LogStore {
     /// Trash. The next append or load recreates a fresh UUID-derived directory.
     public func forgetHistory(serviceID: UUID) {
         entriesByService[serviceID] = []
+        recentReadCache[serviceID] = nil
         writers[serviceID] = nil
         locations[serviceID] = nil
         decoders = decoders.filter { $0.key.serviceID != serviceID }
@@ -239,6 +268,7 @@ public actor LogStore {
                 try fileManager.removeItem(at: serviceDirectory)
             }
             entriesByService[serviceID] = []
+            recentReadCache[serviceID] = nil
             writers[serviceID] = nil
             locations[serviceID] = nil
             decoders = decoders.filter { $0.key.serviceID != serviceID }
@@ -436,6 +466,7 @@ public actor LogStore {
     }
 
     private func appendToMemory(_ entry: LogEntry, serviceID: UUID) {
+        recentReadCache[serviceID] = nil
         var entries = entriesByService[serviceID] ?? []
         entries.append(contentsOf: displayLines(from: entry))
         if entries.count > maximumEntries {

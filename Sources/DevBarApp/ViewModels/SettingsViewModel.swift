@@ -68,6 +68,7 @@ final class SettingsViewModel {
     private let workspaceDetector: any WorkspaceDetecting
     private let workspaceLocked: @MainActor (UUID) -> Bool
     private let logDirectoryLocked: @MainActor () -> Bool
+    private let mcpPortLocked: @MainActor () -> Bool
     @ObservationIgnored private var configurationEventGeneration: UInt64 = 0
     @ObservationIgnored private var pendingConfigurationEventCount = 0
 
@@ -77,6 +78,7 @@ final class SettingsViewModel {
         validator: ConfigValidator = ConfigValidator(),
         workspaceLocked: @escaping @MainActor (UUID) -> Bool = { _ in false },
         logDirectoryLocked: @escaping @MainActor () -> Bool = { false },
+        mcpPortLocked: @escaping @MainActor () -> Bool = { false },
         commit: @escaping CommitAction,
         refreshShell: @escaping ShellRefreshAction,
         checkSyntax: SyntaxCheckAction? = nil,
@@ -89,6 +91,7 @@ final class SettingsViewModel {
         self.validator = validator
         self.workspaceLocked = workspaceLocked
         self.logDirectoryLocked = logDirectoryLocked
+        self.mcpPortLocked = mcpPortLocked
         commitAction = commit
         shellRefreshAction = refreshShell
         syntaxCheckAction = checkSyntax ?? { zshPath, command in
@@ -351,6 +354,11 @@ final class SettingsViewModel {
 
     @discardableResult
     func commitPreferences() async -> Bool {
+        if draft.preferences.mcpPort != baseline.preferences.mcpPort, mcpPortLocked() {
+            draft.preferences.mcpPort = baseline.preferences.mcpPort
+            setNotice(.failure("请先停止 MCP，再修改监听端口。"))
+            return false
+        }
         if draft.preferences.logDirectory != baseline.preferences.logDirectory,
            logDirectoryLocked() {
             draft.preferences.logDirectory = baseline.preferences.logDirectory

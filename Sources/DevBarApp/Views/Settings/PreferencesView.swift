@@ -5,6 +5,7 @@ struct PreferencesView: View {
     @Bindable var viewModel: SettingsViewModel
     let presentationPreferences: AppPresentationPreferences
     @Bindable var updateController: AppUpdateController
+    let mcpService: MCPServiceController?
 
     var body: some View {
         ScrollView {
@@ -28,7 +29,7 @@ struct PreferencesView: View {
                     VStack(alignment: .leading, spacing: 5) {
                         Text("偏好设置")
                             .font(.system(size: 23, weight: .bold))
-                        Text("应用外观、版本更新、Shell、日志轮转和安全停止策略")
+                        Text("应用外观、版本更新、MCP、Shell、日志和安全停止策略")
                             .font(.system(size: 12))
                             .foregroundStyle(DevBarTheme.textSecondary)
                     }
@@ -195,6 +196,10 @@ struct PreferencesView: View {
                             .font(.system(size: 11))
                             .foregroundStyle(DevBarTheme.textSecondary)
                     }
+                }
+
+                if let mcpService {
+                    MCPSettingsSection(viewModel: viewModel, mcpService: mcpService)
                 }
             }
             .padding(.horizontal, 24)

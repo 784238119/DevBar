@@ -104,6 +104,7 @@ public struct ConfigValidator {
         )
         validateRange(preferences.sigintGraceSeconds, range: 1...60, path: "preferences.sigintGraceSeconds", label: "SIGINT grace period", issues: &issues)
         validateRange(preferences.sigtermGraceSeconds, range: 1...30, path: "preferences.sigtermGraceSeconds", label: "SIGTERM grace period", issues: &issues)
+        validateRange(preferences.mcpPort, range: PreferencesConfig.mcpPortRange, path: "preferences.mcpPort", label: "MCP port", issues: &issues)
         return issues
     }
 

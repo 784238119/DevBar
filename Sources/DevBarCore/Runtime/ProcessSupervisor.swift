@@ -64,6 +64,7 @@ public actor ProcessSupervisor {
 
     private var providersByZshPath: [String: any ShellEnvironmentProviding] = [:]
     private var runtimes: [UUID: ServiceRuntime] = [:]
+    private var startTimes: [UUID: Date] = [:]
     private var runIDs: [UUID: UUID] = [:]
     private var stateContinuations: [UUID: AsyncStream<ServiceRuntime>.Continuation] = [:]
     private var eventContinuations: [UUID: AsyncStream<SupervisedServiceRuntimeEvent>.Continuation] = [:]
@@ -128,6 +129,7 @@ public actor ProcessSupervisor {
 
         let runID = UUID()
         runIDs[serviceID] = runID
+        startTimes[serviceID] = Date()
         healthConfigs[serviceID] = (runID, service.healthCheck)
         setRuntime(.init(workspaceID: workspace.id, serviceID: serviceID, state: .starting(runID: runID)))
 
@@ -461,6 +463,8 @@ public actor ProcessSupervisor {
     }
 
     private func setRuntime(_ runtime: ServiceRuntime) {
+        var runtime = runtime
+        runtime.startedAt = startTimes[runtime.serviceID]
         runtimes[runtime.serviceID] = runtime
         for continuation in stateContinuations.values {
             continuation.yield(runtime)

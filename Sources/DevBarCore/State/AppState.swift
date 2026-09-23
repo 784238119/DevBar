@@ -134,6 +134,7 @@ public enum ConfigurationEventError: Error, LocalizedError, Sendable {
 public final class AppState {
     public private(set) var config: AppConfig = .empty
     public private(set) var serviceStates: [UUID: ServiceState] = [:]
+    public private(set) var serviceStartedAt: [UUID: Date] = [:]
     public private(set) var serviceProcessGroups: [UUID: Int32] = [:]
     public private(set) var alert: AppAlert?
     public private(set) var logWarnings: [LogStoreWarning] = []
@@ -479,6 +480,7 @@ public final class AppState {
             for await runtime in stream {
                 guard !Task.isCancelled else { return }
                 self?.serviceStates[runtime.serviceID] = runtime.state
+                self?.serviceStartedAt[runtime.serviceID] = runtime.startedAt
                 switch runtime.state {
                 case .stopped, .failed:
                     self?.serviceProcessGroups[runtime.serviceID] = nil

@@ -5,6 +5,7 @@ struct SettingsRootView: View {
     @Bindable var viewModel: SettingsViewModel
     let presentationPreferences: AppPresentationPreferences
     let updateController: AppUpdateController
+    let mcpService: MCPServiceController?
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -13,7 +14,8 @@ struct SettingsRootView: View {
                     PreferencesView(
                         viewModel: viewModel,
                         presentationPreferences: presentationPreferences,
-                        updateController: updateController
+                        updateController: updateController,
+                        mcpService: mcpService
                     )
                 } else {
                     HStack(spacing: 0) {

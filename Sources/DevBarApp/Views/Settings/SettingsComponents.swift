@@ -28,7 +28,11 @@ struct SettingsGradientButtonStyle: ButtonStyle {
             .foregroundStyle(.white)
             .padding(.horizontal, 14)
             .frame(height: 34)
-            .background(DevBarTheme.accent.opacity(configuration.isPressed ? 0.78 : 1))
+            .background {
+                Rectangle()
+                    .fill(DevBarTheme.accent)
+                    .opacity(configuration.isPressed ? 0.78 : 1)
+            }
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .shadow(color: DevBarTheme.accentMiddle.opacity(0.16), radius: 12, y: 5)
     }
