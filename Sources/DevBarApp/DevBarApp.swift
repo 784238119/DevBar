@@ -11,7 +11,7 @@ enum DevBarLauncher {
         if processInfo.arguments.contains("--mcp-http-headers") {
             do {
                 guard let token = try MCPTokenStore().load(), !token.isEmpty else {
-                    FileHandle.standardError.write(Data("DevBar MCP token is not available. Start MCP in DevBar first.\n".utf8))
+                    FileHandle.standardError.write(Data("DevBar MCP Authorization is not configured in Codex config.toml.\n".utf8))
                     exit(1)
                 }
                 let headers = ["Authorization": "Bearer \(token)"]
@@ -20,7 +20,7 @@ enum DevBarLauncher {
                 FileHandle.standardOutput.write(Data("\n".utf8))
                 return
             } catch {
-                FileHandle.standardError.write(Data("DevBar MCP token lookup failed: \(error.localizedDescription)\n".utf8))
+                FileHandle.standardError.write(Data("DevBar MCP configuration lookup failed: \(error.localizedDescription)\n".utf8))
                 exit(1)
             }
         }

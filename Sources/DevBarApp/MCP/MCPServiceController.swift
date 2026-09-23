@@ -26,6 +26,7 @@ final class MCPServiceController {
     private(set) var isStarting = false
     private(set) var errorMessage: String?
     private(set) var token: String?
+    private(set) var isCodexConfigured = false
 
     var activeSessionCount: Int { sessions.count }
 
@@ -45,6 +46,7 @@ final class MCPServiceController {
         guard token == nil else { return }
         do {
             token = try tokenStore.load()
+            isCodexConfigured = token != nil
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -60,17 +62,16 @@ final class MCPServiceController {
             .path
     }
 
+    var codexConfigPath: String { tokenStore.configurationPath }
+
     var codexHTTPConfiguration: String? {
-        guard token != nil else { return nil }
-        let executable = Bundle.main.bundleURL
-            .appendingPathComponent("Contents/MacOS/DevBar", isDirectory: false)
-            .path
-        let helperCommand = "\(shellQuote(executable)) --mcp-http-headers"
+        guard let token else { return nil }
         return """
         [mcp_servers.devbar]
         url = \(tomlString(endpoint))
-        http_headers_helper = \(tomlString(helperCommand))
+        http_headers = { "Authorization" = \(tomlString("Bearer \(token)")) }
         tool_timeout_sec = 120
+        enabled = true
         """
     }
 
@@ -106,7 +107,13 @@ final class MCPServiceController {
                 fileCount: preferences.logFileCount,
                 retentionDays: preferences.logRetentionDays
             )
-            token = try tokenStore.loadOrCreate()
+            if let savedToken = try tokenStore.load() {
+                token = savedToken
+                isCodexConfigured = true
+            } else {
+                if token == nil { token = try tokenStore.generate() }
+                isCodexConfigured = false
+            }
 
             let listener = try LoopbackMCPHTTPServer(
                 port: preferences.mcpPort,
@@ -146,10 +153,35 @@ final class MCPServiceController {
 
     func regenerateToken() {
         do {
-            token = try tokenStore.rotate()
+            let newToken = try tokenStore.generate()
+            try tokenStore.saveToCodexConfiguration(token: newToken, endpoint: endpoint)
+            token = newToken
+            isCodexConfigured = true
             errorMessage = nil
+            removeLegacyKeychainCredentialIfNeeded()
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    func configureCodex() {
+        do {
+            let codexToken = try tokenStore.load() ?? token ?? tokenStore.generate()
+            try tokenStore.saveToCodexConfiguration(token: codexToken, endpoint: endpoint)
+            token = codexToken
+            isCodexConfigured = true
+            errorMessage = nil
+            removeLegacyKeychainCredentialIfNeeded()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func removeLegacyKeychainCredentialIfNeeded() {
+        do {
+            try tokenStore.deleteLegacyKeychainToken()
+        } catch {
+            errorMessage = "Codex 配置已写入，但旧的 Keychain 令牌未能删除：\(error.localizedDescription)"
         }
     }
 
@@ -277,9 +309,6 @@ final class MCPServiceController {
         return "\"\(escaped)\""
     }
 
-    private func shellQuote(_ text: String) -> String {
-        "'\(text.replacingOccurrences(of: "'", with: "'\\''"))'"
-    }
 }
 
 private struct StdioConfiguration: Encodable {

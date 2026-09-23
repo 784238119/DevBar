@@ -194,6 +194,65 @@ final class MCPIntegrationTests: XCTestCase {
         XCTAssertFalse(controller.isRunning)
     }
 
+    func testCodexOneClickConfigurationPreservesOtherServersAndMigratesAuthorization() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DevBar-Codex-MCP-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let configURL = root.appendingPathComponent("config.toml")
+        let existing = """
+        model = "gpt-6-sol"
+
+        [mcp_servers.tabby-mcp]
+        url = "http://localhost:6001/mcp"
+        enabled = true
+
+        [mcp_servers.devbar]
+        url = "http://127.0.0.1:43171/mcp"
+        http_headers = {
+            "X-Client" = "preserve-me",
+            "Authorization" = "Bearer old-token"
+        }
+        http_headers_helper = "old-helper --mcp-http-headers"
+        tool_timeout_sec = 120
+
+        [mcp_servers.tablepro]
+        url = "http://127.0.0.1:23508/mcp"
+        """
+        try Data(existing.utf8).write(to: configURL)
+
+        var didDeleteLegacyCredential = false
+        let tokenStore = MCPTokenStore(
+            configurationFileURL: configURL,
+            legacyKeychainCleanup: { didDeleteLegacyCredential = true }
+        )
+        try tokenStore.saveToCodexConfiguration(
+            token: "new-static-token",
+            endpoint: "http://127.0.0.1:43171/mcp"
+        )
+
+        XCTAssertEqual(try tokenStore.load(), "new-static-token")
+        try tokenStore.deleteLegacyKeychainToken()
+        XCTAssertTrue(didDeleteLegacyCredential)
+
+        let saved = try String(contentsOf: configURL, encoding: .utf8)
+        XCTAssertTrue(saved.contains("[mcp_servers.tabby-mcp]"))
+        XCTAssertTrue(saved.contains("[mcp_servers.tablepro]"))
+        XCTAssertTrue(saved.contains("\"X-Client\" = \"preserve-me\""))
+        XCTAssertTrue(saved.contains("\"Authorization\" = \"Bearer new-static-token\""))
+        XCTAssertFalse(saved.contains("Bearer old-token"))
+        XCTAssertEqual(saved.components(separatedBy: "http_headers =").count - 1, 1)
+        XCTAssertFalse(saved.contains("http_headers_helper"))
+        XCTAssertFalse(saved.contains("bearer_token_env_var"))
+        XCTAssertTrue(saved.contains("tool_timeout_sec = 120"))
+        XCTAssertTrue(saved.contains("enabled = true"))
+        XCTAssertEqual(saved.components(separatedBy: "[mcp_servers.devbar]").count - 1, 1)
+
+        let attributes = try FileManager.default.attributesOfItem(atPath: configURL.path)
+        XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
+    }
+
     private func callStdioProxy(endpoint: String, helperPath: String) async throws -> [[String: Any]] {
         let helper = URL(fileURLWithPath: helperPath)
         XCTAssertTrue(FileManager.default.isExecutableFile(atPath: helper.path))
@@ -331,9 +390,11 @@ private actor FixtureRunner: RunnerControlling {
 }
 
 private struct FixtureTokenStore: MCPTokenProviding {
-    func load() -> String? { "test-secret-token" }
-    func loadOrCreate() -> String { "test-secret-token" }
-    func rotate() -> String { "replacement-token" }
+    var configurationPath: String { "/tmp/DevBar-MCP-tests/config.toml" }
+    func load() throws -> String? { "test-secret-token" }
+    func generate() throws -> String { "replacement-token" }
+    func saveToCodexConfiguration(token: String, endpoint: String) throws {}
+    func deleteLegacyKeychainToken() throws {}
 }
 
 private enum PortError: Error {
