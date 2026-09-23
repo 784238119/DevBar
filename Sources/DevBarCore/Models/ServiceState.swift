@@ -27,13 +27,15 @@ public struct ServiceRuntime: Equatable, Sendable, Identifiable {
     public let workspaceID: UUID
     public let serviceID: UUID
     public var state: ServiceState
+    public var startedAt: Date?
 
     public var id: UUID { serviceID }
 
-    public init(workspaceID: UUID, serviceID: UUID, state: ServiceState) {
+    public init(workspaceID: UUID, serviceID: UUID, state: ServiceState, startedAt: Date? = nil) {
         self.workspaceID = workspaceID
         self.serviceID = serviceID
         self.state = state
+        self.startedAt = startedAt
     }
 }
 

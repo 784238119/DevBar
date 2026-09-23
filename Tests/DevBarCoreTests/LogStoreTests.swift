@@ -97,6 +97,27 @@ final class LogStoreTests: XCTestCase {
         XCTAssertEqual(loaded.map(\.text), ["line-7\n", "line-8\n", "line-9\n"])
     }
 
+    func testMCPRecentReadKeepsViewerHistoryIndependentAndRefreshesAfterAppend() async throws {
+        let writer = try RotatingLogWriter(directory: logDirectory(), maximumFileSizeBytes: 1_024 * 1_024, fileCount: 3)
+        try writer.append(LogEntry(stream: .stdout, text: "older-1\n"))
+        try writer.append(LogEntry(stream: .stdout, text: "older-2\n"))
+        let store = LogStore(paths: paths)
+
+        let first = await store.readRecent(workspaceID: workspaceID, serviceID: serviceID, limit: 1)
+        XCTAssertEqual(first.map(\.text), ["older-2\n"])
+
+        await store.append(
+            LogEntry(stream: .stdout, text: "newest\n"),
+            workspaceID: workspaceID,
+            serviceID: serviceID
+        )
+        let recent = await store.readRecent(workspaceID: workspaceID, serviceID: serviceID, limit: 3)
+        XCTAssertEqual(recent.map(\.text), ["older-1\n", "older-2\n", "newest\n"])
+
+        let viewer = await store.loadRecent(workspaceID: workspaceID, serviceID: serviceID, limit: 3)
+        XCTAssertEqual(viewer.map(\.text), ["older-1\n", "older-2\n", "newest\n"])
+    }
+
     func testClearViewLeavesHistoryAndDeleteHistoryOnlyUsesMappedUUIDDirectory() async throws {
         let store = LogStore(paths: paths, maximumFileSizeBytes: 1_024, fileCount: 3)
         try await store.prepare(workspaceID: workspaceID, serviceID: serviceID)

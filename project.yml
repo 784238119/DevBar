@@ -12,6 +12,9 @@ packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     from: 2.9.2
+  MCP:
+    url: https://github.com/modelcontextprotocol/swift-sdk.git
+    from: 0.12.1
 targets:
   DevBarCore:
     type: library.static
@@ -30,6 +33,10 @@ targets:
     dependencies:
       - target: DevBarCore
       - target: DevBarRunnerKit
+  DevBarMCPProxy:
+    type: tool
+    platform: macOS
+    sources: [Sources/DevBarMCPProxy]
   DevBar:
     type: application
     platform: macOS
@@ -48,7 +55,11 @@ targets:
     dependencies:
       - target: DevBarCore
       - package: Sparkle
+      - package: MCP
       - target: DevBarRunner
+        embed: false
+        link: false
+      - target: DevBarMCPProxy
         embed: false
         link: false
     postBuildScripts:
@@ -63,6 +74,17 @@ targets:
           chmod 755 "${helper_dir}/DevBarRunner"
         outputFiles:
           - "$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Helpers/DevBarRunner"
+      - name: Embed DevBarMCPProxy
+        inputFiles:
+          - "$(BUILT_PRODUCTS_DIR)/DevBarMCPProxy"
+        script: |
+          set -euo pipefail
+          helper_dir="${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/Helpers"
+          mkdir -p "${helper_dir}"
+          cp -f "${BUILT_PRODUCTS_DIR}/DevBarMCPProxy" "${helper_dir}/DevBarMCPProxy"
+          chmod 755 "${helper_dir}/DevBarMCPProxy"
+        outputFiles:
+          - "$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Helpers/DevBarMCPProxy"
   DevBarCoreTests:
     type: bundle.unit-test
     platform: macOS
@@ -107,6 +129,7 @@ schemes:
       targets:
         DevBar: all
         DevBarRunner: all
+        DevBarMCPProxy: all
     test:
       targets:
         - DevBarCoreTests

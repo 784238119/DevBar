@@ -108,8 +108,8 @@ public final class RotatingLogWriter: @unchecked Sendable {
         return records
     }
 
-    /// Reads the same chronological result as `tail -n`, without decoding older
-    /// records once the requested suffix has been found.
+    /// Reads the same chronological result as `tail -n`, scanning files backwards so
+    /// a small limit does not require loading an entire rotated file into memory.
     public func readRecentRecords(
         limit: Int,
         skippingMalformed: (String) -> Void
@@ -121,21 +121,105 @@ public final class RotatingLogWriter: @unchecked Sendable {
 
         for url in logURLsOldestFirst().reversed() where fileManager.fileExists(atPath: url.path) {
             guard try isRegularNonSymlink(url) else { throw RotatingLogWriterError.unsafeLogDirectory }
-            let data: Data
-            do { data = try Data(contentsOf: url) }
-            catch { throw RotatingLogWriterError.fileSystem(error.localizedDescription) }
-            for line in data.split(separator: 0x0A, omittingEmptySubsequences: true).reversed() {
-                let decoded = String(decoding: line, as: UTF8.self)
-                if let record = decodeRecord(decoded) {
-                    newestFirst.append(record)
-                    if newestFirst.count == limit { return Array(newestFirst.reversed()) }
-                } else if !warned {
-                    warned = true
-                    skippingMalformed("Skipped one or more malformed log records.")
-                }
-            }
+            try appendRecentRecords(
+                from: url,
+                limit: limit,
+                to: &newestFirst,
+                warned: &warned,
+                skippingMalformed: skippingMalformed
+            )
+            if newestFirst.count >= limit { return Array(newestFirst.reversed()) }
         }
         return Array(newestFirst.reversed())
+    }
+
+    private func appendRecentRecords(
+        from url: URL,
+        limit: Int,
+        to newestFirst: inout [LogEntry],
+        warned: inout Bool,
+        skippingMalformed: (String) -> Void
+    ) throws {
+        let descriptor = open(url.path, O_RDONLY | O_NOFOLLOW)
+        guard descriptor >= 0 else {
+            throw RotatingLogWriterError.fileSystem(String(cString: strerror(errno)))
+        }
+        defer { close(descriptor) }
+
+        var attributes = stat()
+        guard fstat(descriptor, &attributes) == 0 else {
+            throw RotatingLogWriterError.fileSystem(String(cString: strerror(errno)))
+        }
+        guard (attributes.st_mode & mode_t(S_IFMT)) == mode_t(S_IFREG) else {
+            throw RotatingLogWriterError.unsafeLogDirectory
+        }
+
+        var remaining = attributes.st_size
+        var partialLine = Data()
+        while remaining > 0, newestFirst.count < limit {
+            let chunkLength = Int(min(remaining, 64 * 1_024))
+            remaining -= off_t(chunkLength)
+            let chunk = try readExactly(descriptor, count: chunkLength, offset: remaining)
+            var joined = Data(capacity: chunk.count + partialLine.count)
+            joined.append(chunk)
+            joined.append(partialLine)
+            let lines = joined.split(separator: 0x0A, omittingEmptySubsequences: false)
+            let firstCompleteLine = remaining > 0 ? 1 : 0
+
+            if lines.count > firstCompleteLine {
+                var index = lines.count - 1
+                while index >= firstCompleteLine, newestFirst.count < limit {
+                    let line = lines[index]
+                    if !line.isEmpty {
+                        let decoded = String(decoding: line, as: UTF8.self)
+                        if let record = decodeRecord(decoded) {
+                            newestFirst.append(record)
+                        } else if !warned {
+                            warned = true
+                            skippingMalformed("Skipped one or more malformed log records.")
+                        }
+                    }
+                    if index == firstCompleteLine { break }
+                    index -= 1
+                }
+            }
+
+            if remaining > 0, let first = lines.first {
+                partialLine = Data(first)
+            } else {
+                partialLine = Data()
+            }
+        }
+    }
+
+    private func readExactly(_ descriptor: Int32, count: Int, offset: off_t) throws -> Data {
+        var data = Data(count: count)
+        let failure = data.withUnsafeMutableBytes { bytes -> RotatingLogWriterError? in
+            guard let baseAddress = bytes.baseAddress else {
+                return RotatingLogWriterError.fileSystem("Could not allocate a log read buffer.")
+            }
+            var readCount = 0
+            while readCount < count {
+                let result = Darwin.pread(
+                    descriptor,
+                    baseAddress.advanced(by: readCount),
+                    count - readCount,
+                    offset + off_t(readCount)
+                )
+                if result > 0 {
+                    readCount += result
+                } else if result < 0, errno == EINTR {
+                    continue
+                } else if result == 0 {
+                    return RotatingLogWriterError.fileSystem("Unexpected end of log file while reading recent records.")
+                } else {
+                    return RotatingLogWriterError.fileSystem(String(cString: strerror(errno)))
+                }
+            }
+            return nil
+        }
+        if let failure { throw failure }
+        return data
     }
 
     public func removeHistory() throws {

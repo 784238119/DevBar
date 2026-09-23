@@ -8,6 +8,7 @@ struct AppDependencies {
     let appState: AppState
     let paths: AppPaths
     let logStore: LogStore
+    let mcpService: MCPServiceController?
     let deletionCoordinator: DeletionCoordinator
     let logWindowSelection: LogWindowSelection
 
@@ -17,15 +18,17 @@ struct AppDependencies {
         let logs = LogStore(paths: paths)
         let supervisor = ProcessSupervisor(logStore: logs)
         let shell = ShellEnvironmentProvider(zshPath: "/bin/zsh")
+        let appState = AppState(
+            configurationStore: configurationStore,
+            supervisor: supervisor,
+            shellEnvironment: shell,
+            logs: logs
+        )
         return AppDependencies(
-            appState: AppState(
-                configurationStore: configurationStore,
-                supervisor: supervisor,
-                shellEnvironment: shell,
-                logs: logs
-            ),
+            appState: appState,
             paths: paths,
             logStore: logs,
+            mcpService: MCPServiceController(appState: appState, supervisor: supervisor, logStore: logs),
             deletionCoordinator: DeletionCoordinator(
                 paths: paths,
                 configurationStore: configurationStore
@@ -51,6 +54,7 @@ struct AppDependencies {
             ),
             paths: paths,
             logStore: logs,
+            mcpService: nil,
             deletionCoordinator: DeletionCoordinator(
                 paths: paths,
                 configurationStore: configurationStore
@@ -70,6 +74,9 @@ struct AppDependencies {
             },
             logDirectoryLocked: { [appState] in
                 appState.hasActiveServices
+            },
+            mcpPortLocked: { [mcpService] in
+                mcpService?.isRunning == true || mcpService?.isStarting == true
             },
             commit: { [appState, deletionCoordinator] event in
                 var movedLogFolders = 0
