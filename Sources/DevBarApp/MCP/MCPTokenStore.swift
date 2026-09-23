@@ -102,9 +102,15 @@ enum MCPTokenStoreError: Error, LocalizedError {
 
 enum CodexMCPConfigurationFile {
     private static let serverTable = "mcp_servers.devbar"
+    private static let headersTable = "mcp_servers.devbar.http_headers"
     private static let managedKeys: Set<String> = [
         "url", "http_headers", "http_headers_helper", "bearer_token_env_var", "enabled"
     ]
+
+    private struct HeaderSubtable {
+        let range: Range<Int>
+        let values: [String: String]
+    }
 
     static func loadToken(from url: URL) throws -> String? {
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
@@ -115,8 +121,15 @@ enum CodexMCPConfigurationFile {
             throw MCPTokenStoreError.configuration("Unable to read config.toml: \(error.localizedDescription)")
         }
         let lines = lines(from: content)
-        guard let range = try serverTableRange(in: lines) else { return nil }
-        let headers = try headerMap(in: lines, range: range)
+        let range = try serverTableRange(in: lines)
+        let headerSubtable = try headerSubtable(in: lines)
+        var headers = try range.map { try headerMap(in: lines, range: $0) } ?? [:]
+        if let range, headerSubtable != nil, hasAssignment("http_headers", in: Array(lines[range])) {
+            throw MCPTokenStoreError.configuration("DevBar has both inline and table-form http_headers.")
+        }
+        if let subtableValues = headerSubtable?.values {
+            headers.merge(subtableValues) { current, _ in current }
+        }
         guard let authorization = headers.first(where: { $0.key.caseInsensitiveCompare("Authorization") == .orderedSame })?.value,
               authorization.hasPrefix("Bearer ") else { return nil }
         let token = String(authorization.dropFirst("Bearer ".count))
@@ -144,11 +157,26 @@ enum CodexMCPConfigurationFile {
 
     static func updating(_ content: String, token: String, endpoint: String) throws -> String {
         var fileLines = lines(from: content)
+        let headerSubtable = try headerSubtable(in: fileLines)
+        if let headerSubtable {
+            fileLines.removeSubrange(headerSubtable.range)
+        }
         let existingTableRange = try serverTableRange(in: fileLines)
 
         var headers: [String: String] = [:]
         if let range = existingTableRange {
+            if headerSubtable != nil, hasAssignment("http_headers", in: Array(fileLines[range])) {
+                throw MCPTokenStoreError.configuration("DevBar has both inline and table-form http_headers; resolve the duplicate before one-click setup.")
+            }
             headers = try headerMap(in: fileLines, range: range)
+            if let subtableValues = headerSubtable?.values {
+                for (key, value) in subtableValues {
+                    guard !headers.keys.contains(where: { $0.caseInsensitiveCompare(key) == .orderedSame }) else {
+                        throw MCPTokenStoreError.configuration("The DevBar MCP configuration contains duplicate HTTP header names.")
+                    }
+                    headers[key] = value
+                }
+            }
 
             var retained: [String] = []
             var lineIndex = range.lowerBound
@@ -172,18 +200,55 @@ enum CodexMCPConfigurationFile {
             block.append(contentsOf: managedLines(headers: headers, token: token, endpoint: endpoint, includeTimeout: !hasAssignment("tool_timeout_sec", in: retained)))
             fileLines.replaceSubrange(range, with: block)
         } else {
-            if let parent = fileLines.indices.first(where: { tableName(in: fileLines[$0]) == "mcp_servers" }),
-               let end = nextTableIndex(after: parent, in: fileLines),
-               fileLines[parent..<end].contains(where: { assignmentKey(in: $0) == "devbar" }) {
-                throw MCPTokenStoreError.configuration("The DevBar MCP entry is inline inside [mcp_servers]; edit it manually before using one-click setup.")
+            if let parent = fileLines.indices.first(where: { tableName(in: fileLines[$0]) == "mcp_servers" }) {
+                let end = nextTableIndex(after: parent, in: fileLines) ?? fileLines.endIndex
+                if fileLines[parent..<end].contains(where: { assignmentKey(in: $0) == "devbar" }) {
+                    throw MCPTokenStoreError.configuration("The DevBar MCP entry is inline inside [mcp_servers]; edit it manually before using one-click setup.")
+                }
             }
-            if fileLines.last?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
-                fileLines.append("")
+
+            var block = ["[mcp_servers.devbar]"]
+            block.append(contentsOf: managedLines(headers: headerSubtable?.values ?? [:], token: token, endpoint: endpoint, includeTimeout: true))
+            if let insertionIndex = headerSubtable?.range.lowerBound {
+                if insertionIndex > 0,
+                   fileLines[insertionIndex - 1].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+                    block.insert("", at: 0)
+                }
+                fileLines.insert(contentsOf: block, at: min(insertionIndex, fileLines.endIndex))
+            } else {
+                if fileLines.last?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+                    fileLines.append("")
+                }
+                fileLines.append(contentsOf: block)
             }
-            fileLines.append("[mcp_servers.devbar]")
-            fileLines.append(contentsOf: managedLines(headers: headers, token: token, endpoint: endpoint, includeTimeout: true))
         }
         return fileLines.joined(separator: "\n") + "\n"
+    }
+
+    private static func headerSubtable(in lines: [String]) throws -> HeaderSubtable? {
+        let starts = lines.indices.filter { tableName(in: lines[$0]) == headersTable }
+        guard starts.count <= 1 else {
+            throw MCPTokenStoreError.configuration("The DevBar http_headers table appears more than once.")
+        }
+        if lines.contains(where: { arrayTableName(in: $0) == headersTable }) {
+            throw MCPTokenStoreError.configuration("The DevBar http_headers entry uses an unsupported array-table form.")
+        }
+        guard let start = starts.first else { return nil }
+        let end = nextTableIndex(after: start, in: lines) ?? lines.endIndex
+        if end < lines.endIndex {
+            let nextLine = lines[end]
+            let nextTable = tableName(in: nextLine) ?? arrayTableName(in: nextLine)
+            if nextTable?.hasPrefix(headersTable + ".") == true {
+                throw MCPTokenStoreError.configuration("Nested tables inside DevBar http_headers are unsupported.")
+            }
+        }
+
+        let assignments = lines[(start + 1)..<end].compactMap { line -> String? in
+            let cleanLine = uncommented(line).trimmingCharacters(in: .whitespacesAndNewlines)
+            return assignmentKey(in: line) == nil || cleanLine.isEmpty ? nil : cleanLine
+        }
+        let expression = "{\n" + assignments.joined(separator: ",\n") + "\n}"
+        return HeaderSubtable(range: start..<end, values: try parseInlineStringMap(expression))
     }
 
     private static func serverTableRange(in lines: [String]) throws -> Range<Int>? {

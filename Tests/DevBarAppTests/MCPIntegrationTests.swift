@@ -253,6 +253,95 @@ final class MCPIntegrationTests: XCTestCase {
         XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
     }
 
+    func testCodexOneClickConfigurationMigratesHeaderSubtable() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DevBar-Codex-Headers-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let configURL = root.appendingPathComponent("config.toml")
+        let existing = """
+        [mcp_servers.devbar]
+        url = "http://127.0.0.1:43171/mcp"
+        tool_timeout_sec = 75
+
+        [mcp_servers.devbar.http_headers]
+        "X-Client" = "preserve-me"
+        "Authorization" = "Bearer old-token"
+
+        [mcp_servers.tablepro]
+        url = "http://127.0.0.1:23508/mcp"
+        """
+        try Data(existing.utf8).write(to: configURL)
+
+        let tokenStore = MCPTokenStore(configurationFileURL: configURL, legacyKeychainCleanup: {})
+        XCTAssertEqual(try tokenStore.load(), "old-token")
+        try tokenStore.saveToCodexConfiguration(
+            token: "new-static-token",
+            endpoint: "http://127.0.0.1:43171/mcp"
+        )
+
+        let saved = try String(contentsOf: configURL, encoding: .utf8)
+        XCTAssertTrue(saved.contains("\"X-Client\" = \"preserve-me\""))
+        XCTAssertTrue(saved.contains("\"Authorization\" = \"Bearer new-static-token\""))
+        XCTAssertFalse(saved.contains("Bearer old-token"))
+        XCTAssertFalse(saved.contains("[mcp_servers.devbar.http_headers]"))
+        XCTAssertTrue(saved.contains("tool_timeout_sec = 75"))
+        XCTAssertTrue(saved.contains("[mcp_servers.tablepro]"))
+        XCTAssertEqual(try tokenStore.load(), "new-static-token")
+    }
+
+    func testHeaderSubtableWithoutExplicitServerTableGetsConfigured() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DevBar-Codex-Implicit-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let configURL = root.appendingPathComponent("config.toml")
+        let existing = """
+        [mcp_servers.devbar.http_headers]
+        "X-Client" = "preserve-me"
+
+        [mcp_servers.tablepro]
+        url = "http://127.0.0.1:23508/mcp"
+        """
+        try Data(existing.utf8).write(to: configURL)
+        let tokenStore = MCPTokenStore(configurationFileURL: configURL, legacyKeychainCleanup: {})
+
+        try tokenStore.saveToCodexConfiguration(
+            token: "new-static-token",
+            endpoint: "http://127.0.0.1:43171/mcp"
+        )
+
+        let saved = try String(contentsOf: configURL, encoding: .utf8)
+        XCTAssertTrue(saved.contains("[mcp_servers.devbar]"))
+        XCTAssertTrue(saved.contains("\"X-Client\" = \"preserve-me\""))
+        XCTAssertTrue(saved.contains("[mcp_servers.tablepro]"))
+        XCTAssertFalse(saved.contains("[mcp_servers.devbar.http_headers]"))
+        XCTAssertEqual(try tokenStore.load(), "new-static-token")
+    }
+
+    func testInlineDevBarServerAtEndOfMCPServersTableIsRejectedWithoutWriting() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DevBar-Codex-Inline-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let configURL = root.appendingPathComponent("config.toml")
+        let existing = """
+        [mcp_servers]
+        devbar = { url = "http://127.0.0.1:43171/mcp", enabled = true }
+        """
+        try Data(existing.utf8).write(to: configURL)
+        let tokenStore = MCPTokenStore(configurationFileURL: configURL, legacyKeychainCleanup: {})
+
+        XCTAssertThrowsError(try tokenStore.saveToCodexConfiguration(
+            token: "new-static-token",
+            endpoint: "http://127.0.0.1:43171/mcp"
+        ))
+        XCTAssertEqual(try String(contentsOf: configURL, encoding: .utf8), existing)
+    }
+
     private func callStdioProxy(endpoint: String, helperPath: String) async throws -> [[String: Any]] {
         let helper = URL(fileURLWithPath: helperPath)
         XCTAssertTrue(FileManager.default.isExecutableFile(atPath: helper.path))
