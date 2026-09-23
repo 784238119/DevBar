@@ -50,7 +50,7 @@ struct MCPSettingsSection: View {
                     .foregroundStyle(DevBarTheme.textSecondary)
 
                 HStack(spacing: 10) {
-                    Text(mcpService.token == nil ? "访问令牌尚未生成" : "访问令牌已保存在钥匙串")
+                    Text(mcpService.isCodexConfigured ? "访问令牌已写入 Codex config.toml" : "Codex 尚未配置访问令牌")
                         .font(.system(size: 12))
                     Spacer()
                     Button("复制令牌") {
@@ -58,6 +58,11 @@ struct MCPSettingsSection: View {
                     }
                     .disabled(mcpService.token == nil)
                     .accessibilityIdentifier("preferences.mcp.copyToken")
+                    Button(mcpService.isCodexConfigured ? "更新 Codex 配置" : "一键配置 Codex") {
+                        configureCodex()
+                    }
+                    .disabled(viewModel.isSaving || mcpService.isStarting)
+                    .accessibilityIdentifier("preferences.mcp.configureCodex")
                     Button("重新生成") { confirmsTokenRotation = true }
                         .accessibilityIdentifier("preferences.mcp.rotateToken")
                 }
@@ -69,7 +74,7 @@ struct MCPSettingsSection: View {
                 Text("HTTP 端点：\(mcpService.endpoint)")
                     .font(.system(size: 11, design: .monospaced))
                     .textSelection(.enabled)
-                Text("复制配置会包含令牌；重新生成后，已有 Agent 配置需要同步更新。服务日志可能含有应用输出的敏感信息。")
+                Text("一键配置会将令牌以明文写入 \(mcpService.codexConfigPath)，保留其他 MCP 配置并移除旧的 Keychain helper/令牌。Codex 可能需要重启或新建任务加载设置。服务日志可能含有应用输出的敏感信息。")
                     .font(.system(size: 11))
                     .foregroundStyle(DevBarTheme.textSecondary)
 
@@ -92,9 +97,19 @@ struct MCPSettingsSection: View {
             }
             Button("取消", role: .cancel) {}
         } message: {
-            Text("已复制到 Agent 的 HTTP 和 stdio 配置需要更新。")
+            Text("Codex config.toml 会更新为新令牌，旧令牌会失效；已运行的 Codex 会话需要重新连接。")
         }
         .task { mcpService.loadSavedToken() }
+    }
+
+    private func configureCodex() {
+        Task {
+            if viewModel.draft.preferences.mcpPort != viewModel.baseline.preferences.mcpPort,
+               !(await viewModel.commitPreferences()) {
+                return
+            }
+            mcpService.configureCodex()
+        }
     }
 
     @ViewBuilder
