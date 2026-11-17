@@ -55,7 +55,8 @@ private struct ProductionDevBarApp: App {
         _updateController = State(initialValue: AppUpdateController())
         applicationDelegate.configure(
             appState: dependencies.appState,
-            presentationPreferences: presentationPreferences
+            presentationPreferences: presentationPreferences,
+            mcpService: dependencies.mcpService
         )
     }
 

@@ -6,6 +6,8 @@ final class DevBarApplicationDelegate: NSObject, NSApplicationDelegate {
     let mainWindowCoordinator: MainWindowCoordinator
     private weak var appState: AppState?
     private var presentationPreferences: AppPresentationPreferences?
+    private var mcpService: MCPServiceController?
+    private var mcpRestoreTask: Task<Void, Never>?
     private var terminationTask: Task<Void, Never>?
     private var hasApprovedTermination = false
 
@@ -21,16 +23,29 @@ final class DevBarApplicationDelegate: NSObject, NSApplicationDelegate {
 
     func configure(
         appState: AppState,
-        presentationPreferences: AppPresentationPreferences
+        presentationPreferences: AppPresentationPreferences,
+        mcpService: MCPServiceController?
     ) {
         self.appState = appState
         self.presentationPreferences = presentationPreferences
+        self.mcpService = mcpService
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(windowWillClose(_:)),
             name: NSWindow.willCloseNotification,
             object: nil
         )
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        guard let mcpService else { return }
+        mcpRestoreTask = Task {
+            await mcpService.restoreRunningStateIfNeeded()
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        mcpRestoreTask?.cancel()
     }
 
     func applicationShouldHandleReopen(

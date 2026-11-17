@@ -9,6 +9,7 @@ final class MCPServiceController {
     private let appState: AppState
     private let logStore: LogStore
     private let tokenStore: any MCPTokenProviding
+    private let runtimeStateStore: any MCPRuntimeStateStoring
     private let toolHandler: MCPToolHandler
     private var listener: LoopbackMCPHTTPServer?
     @ObservationIgnored private var sessions: [String: Session] = [:]
@@ -34,11 +35,13 @@ final class MCPServiceController {
         appState: AppState,
         supervisor: ProcessSupervisor,
         logStore: LogStore,
-        tokenStore: any MCPTokenProviding = MCPTokenStore()
+        tokenStore: any MCPTokenProviding = MCPTokenStore(),
+        runtimeStateStore: any MCPRuntimeStateStoring = MCPRuntimeStateStore()
     ) {
         self.appState = appState
         self.logStore = logStore
         self.tokenStore = tokenStore
+        self.runtimeStateStore = runtimeStateStore
         toolHandler = MCPToolHandler(appState: appState, supervisor: supervisor, logStore: logStore)
     }
 
@@ -64,18 +67,7 @@ final class MCPServiceController {
 
     var codexConfigPath: String { tokenStore.configurationPath }
 
-    var codexHTTPConfiguration: String? {
-        guard let token else { return nil }
-        return """
-        [mcp_servers.devbar]
-        url = \(tomlString(endpoint))
-        http_headers = { "Authorization" = \(tomlString("Bearer \(token)")) }
-        tool_timeout_sec = 120
-        enabled = true
-        """
-    }
-
-    var stdioJSONConfiguration: String? {
+    var mcpAccessConfiguration: String? {
         guard let token else { return nil }
         let configuration = StdioConfiguration(mcpServers: [
             "devbar": .init(
@@ -87,6 +79,15 @@ final class MCPServiceController {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         guard let data = try? encoder.encode(configuration) else { return nil }
         return String(decoding: data, as: UTF8.self)
+    }
+
+    func restoreRunningStateIfNeeded() async {
+        guard runtimeStateStore.wasRunning else { return }
+        while !appState.isConfigurationReady {
+            guard !Task.isCancelled else { return }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        await start()
     }
 
     func start() async {
@@ -126,7 +127,7 @@ final class MCPServiceController {
                 onFailure: { [weak self] error in
                     Task { @MainActor [weak self] in
                         guard let self, self.isRunning else { return }
-                        await self.stop()
+                        await self.stopAfterFailure()
                         self.errorMessage = "MCP 监听已中断：\(error.localizedDescription)"
                     }
                 }
@@ -135,16 +136,28 @@ final class MCPServiceController {
 
             self.listener = listener
             isRunning = true
+            runtimeStateStore.recordRunning(true)
         } catch {
             errorMessage = "MCP 启动失败：\(error.localizedDescription)"
         }
     }
 
     func stop() async {
+        await stop(recordIntent: true)
+    }
+
+    private func stopAfterFailure() async {
+        await stop(recordIntent: false)
+    }
+
+    private func stop(recordIntent: Bool) async {
         guard isRunning else { return }
         isRunning = false
         listener?.stop()
         listener = nil
+        if recordIntent {
+            runtimeStateStore.recordRunning(false)
+        }
         let oldSessions = Array(sessions.values)
         sessions.removeAll()
         for session in oldSessions { await session.server.stop() }
@@ -300,13 +313,6 @@ final class MCPServiceController {
         var difference: UInt8 = 0
         for index in left.indices { difference |= left[index] ^ right[index] }
         return difference == 0
-    }
-
-    private func tomlString(_ text: String) -> String {
-        let escaped = text.replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\n", with: "\\n")
-        return "\"\(escaped)\""
     }
 
 }

@@ -34,7 +34,11 @@ struct MCPSettingsSection: View {
 
                 HStack(spacing: 10) {
                     Text("本机端口")
-                    TextField("端口", value: $viewModel.draft.preferences.mcpPort, format: .number)
+                    TextField(
+                        "端口",
+                        value: $viewModel.draft.preferences.mcpPort,
+                        format: .number.grouping(.never)
+                    )
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 100)
                         .disabled(mcpService.isRunning || mcpService.isStarting)
@@ -45,7 +49,7 @@ struct MCPSettingsSection: View {
                         .foregroundStyle(DevBarTheme.textSecondary)
                 }
                 SettingsFieldError(issue: viewModel.issue(at: "preferences.mcpPort"))
-                Text("每次打开 DevBar 后手动启动。端口修改后按 Return 保存；运行时不能修改。")
+                Text("会恢复上次启停状态；首次默认停止。端口修改后按 Return 保存，运行时不能修改。")
                     .font(.system(size: 11))
                     .foregroundStyle(DevBarTheme.textSecondary)
 
@@ -79,12 +83,8 @@ struct MCPSettingsSection: View {
                     .foregroundStyle(DevBarTheme.textSecondary)
 
                 configurationBlock(
-                    title: "Codex · HTTP 配置",
-                    configuration: mcpService.codexHTTPConfiguration
-                )
-                configurationBlock(
-                    title: "本机 Agent · stdio JSON 配置",
-                    configuration: mcpService.stdioJSONConfiguration
+                    title: "MCP 接入",
+                    configuration: mcpService.mcpAccessConfiguration
                 )
             }
         }
@@ -127,7 +127,7 @@ struct MCPSettingsSection: View {
                 .padding(10)
                 .background(DevBarTheme.surfaceSubtle, in: RoundedRectangle(cornerRadius: 8))
         } else {
-            Text("启动 MCP 后可复制 \(title)。")
+            Text("启动 MCP 后可复制通用配置。")
                 .font(.system(size: 11))
                 .foregroundStyle(DevBarTheme.textSecondary)
         }

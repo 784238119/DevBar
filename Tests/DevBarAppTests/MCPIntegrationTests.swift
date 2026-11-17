@@ -6,6 +6,21 @@ import XCTest
 
 @MainActor
 final class MCPIntegrationTests: XCTestCase {
+    func testRuntimeStateDefaultsToStoppedAndPersists() {
+        let suiteName = "MCPRuntimeStateTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = MCPRuntimeStateStore(defaults: defaults)
+        XCTAssertFalse(store.wasRunning)
+
+        store.recordRunning(true)
+        XCTAssertTrue(MCPRuntimeStateStore(defaults: defaults).wasRunning)
+
+        store.recordRunning(false)
+        XCTAssertFalse(MCPRuntimeStateStore(defaults: defaults).wasRunning)
+    }
+
     func testHTTPAndStdioAuthenticationQueriesAndServiceControl() async throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("DevBar-MCP-\(UUID().uuidString)", isDirectory: true)
@@ -52,14 +67,20 @@ final class MCPIntegrationTests: XCTestCase {
         XCTAssertTrue(appState.isConfigurationReady)
         XCTAssertTrue(appState.isShellEnvironmentReady)
 
+        let runtimeState = FixtureMCPRuntimeStateStore()
         let controller = MCPServiceController(
             appState: appState,
             supervisor: supervisor,
             logStore: logs,
-            tokenStore: FixtureTokenStore()
+            tokenStore: FixtureTokenStore(),
+            runtimeStateStore: runtimeState
         )
-        await controller.start()
+        await controller.restoreRunningStateIfNeeded()
+        XCTAssertFalse(controller.isRunning)
+        runtimeState.wasRunning = true
+        await controller.restoreRunningStateIfNeeded()
         XCTAssertTrue(controller.isRunning, controller.errorMessage ?? "No startup details")
+        XCTAssertTrue(runtimeState.wasRunning)
         guard controller.isRunning else { return }
 
         do {
@@ -192,6 +213,7 @@ final class MCPIntegrationTests: XCTestCase {
         }
         await controller.stop()
         XCTAssertFalse(controller.isRunning)
+        XCTAssertFalse(runtimeState.wasRunning)
     }
 
     func testCodexOneClickConfigurationPreservesOtherServersAndMigratesAuthorization() throws {
@@ -484,6 +506,19 @@ private struct FixtureTokenStore: MCPTokenProviding {
     func generate() throws -> String { "replacement-token" }
     func saveToCodexConfiguration(token: String, endpoint: String) throws {}
     func deleteLegacyKeychainToken() throws {}
+}
+
+@MainActor
+private final class FixtureMCPRuntimeStateStore: MCPRuntimeStateStoring {
+    var wasRunning: Bool
+
+    init(wasRunning: Bool = false) {
+        self.wasRunning = wasRunning
+    }
+
+    func recordRunning(_ running: Bool) {
+        wasRunning = running
+    }
 }
 
 private enum PortError: Error {
