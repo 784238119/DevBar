@@ -28,6 +28,7 @@
 		3A8404713C80B670BD9BE4B4 /* AppConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 181B12817F453B0E3BE80115 /* AppConfigTests.swift */; };
 		3AC45F2A5DD6D82367948E3A /* ProcessGroupTerminatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E216783AF410588F1B1107DF /* ProcessGroupTerminatorTests.swift */; };
 		3BD512A80763137B903F6937 /* libDevBarCore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B4865D6FF1C88456C76D8259 /* libDevBarCore.a */; };
+		3F678AB868A49FD8BE58D241 /* MCPRuntimeStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5489E9255FB9799339879CB5 /* MCPRuntimeStateStore.swift */; };
 		4B6BC790941ADB2C79A3FE6C /* DeletionCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4559E0F6032BD2705A2D95D0 /* DeletionCoordinatorTests.swift */; };
 		4BEB5C93F132FC8E411F4E88 /* SettingsRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC93EE0FB423C635692B6373 /* SettingsRootView.swift */; };
 		4ED9C68219CD3B3DB013BB81 /* libDevBarCore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B4865D6FF1C88456C76D8259 /* libDevBarCore.a */; };
@@ -212,6 +213,7 @@
 		48B7118F1A598843FE5FAC9D /* ServiceRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceRowView.swift; sourceTree = "<group>"; };
 		4B9E79E74E2A4AA587F081E9 /* WorkspaceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceSettingsView.swift; sourceTree = "<group>"; };
 		51A7AF3B3D886ABF7025C03B /* WorkspaceDetectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceDetectorTests.swift; sourceTree = "<group>"; };
+		5489E9255FB9799339879CB5 /* MCPRuntimeStateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPRuntimeStateStore.swift; sourceTree = "<group>"; };
 		57A400D267C91FBB2DE67B14 /* MainWindowCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowCoordinatorTests.swift; sourceTree = "<group>"; };
 		59A79A62613A9F3F91444642 /* DevBarMCPProxy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevBarMCPProxy.swift; sourceTree = "<group>"; };
 		5AD3FAF549286D7220CA0A4E /* LogSanitizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogSanitizer.swift; sourceTree = "<group>"; };
@@ -576,6 +578,7 @@
 			isa = PBXGroup;
 			children = (
 				F76A3CAF0A3E9943A4A80A9B /* LoopbackMCPHTTPServer.swift */,
+				5489E9255FB9799339879CB5 /* MCPRuntimeStateStore.swift */,
 				ABA99AB69B22AA5471EAB596 /* MCPServiceController.swift */,
 				D8506800B391117EC6D43307 /* MCPTokenStore.swift */,
 				B7EA4CE864670F70519CC762 /* MCPToolHandler.swift */,
@@ -1033,6 +1036,7 @@
 				1A3B61611C6B17FBD65936AE /* LogViewModel.swift in Sources */,
 				2B2EFFE8185E6E978437510E /* LogWindowView.swift in Sources */,
 				9271F530999FCEFA9B32DE98 /* LoopbackMCPHTTPServer.swift in Sources */,
+				3F678AB868A49FD8BE58D241 /* MCPRuntimeStateStore.swift in Sources */,
 				DBF9280C701C69E714F2ADD3 /* MCPServiceController.swift in Sources */,
 				EE2F53A70DC5FCADA6D1CA16 /* MCPSettingsSection.swift in Sources */,
 				E78C98E041456C790DDFF8BC /* MCPTokenStore.swift in Sources */,

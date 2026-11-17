@@ -100,7 +100,7 @@ xcodebuild \
 
 ## 供 Agent 调用的 MCP
 
-在“偏好设置 → MCP 服务”中设置本机端口（默认 `43171`），点击“启动 MCP”。DevBar 每次打开后都需要手动启动 MCP；关闭 DevBar 或点击“停止 MCP”后，外部连接不可用。HTTP 端点仅监听 `127.0.0.1`，要求随机生成的 Bearer 令牌；令牌保存在 macOS 钥匙串，不写入 `config.json`。设置页可以复制 Codex HTTP 配置或通用 stdio JSON 配置。stdio helper 位于 `DevBar.app/Contents/Helpers/DevBarMCPProxy`，它会连接正在运行的 DevBar MCP 服务。
+在“偏好设置 → MCP 服务”中设置本机端口（默认 `43171`），点击“启动 MCP”。DevBar 会记住上次启停状态：上次运行时，下次打开会自动启动；上次停止或首次使用时保持停止。关闭 DevBar 或点击“停止 MCP”后，外部连接不可用。HTTP 端点仅监听 `127.0.0.1`，要求随机生成的 Bearer 令牌；令牌写入 Codex `config.toml`，不写入 DevBar `config.json`。设置页提供一份通用 stdio JSON 配置，其他 MCP 客户端可按各自格式转换。stdio helper 位于 `DevBar.app/Contents/Helpers/DevBarMCPProxy`，它会连接正在运行的 DevBar MCP 服务。
 
 提供的工具包括：`get_app_info`、`get_current_time`、`list_workspaces`、`list_services`、`get_service_status`、`get_service_logs`、`start_service`、`stop_service`、`restart_service`。单服务操作使用工作区和服务 UUID；日志最多返回最近 200 条记录且限制输出大小。MCP 不提供配置修改、批量启停、日志删除或任意命令执行。重启会等待旧进程按现有停止策略退出，再按最新保存的配置启动。
 
